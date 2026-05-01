@@ -42,7 +42,9 @@ class CardRegistry:
         try:
             mod = importlib.import_module(package_name)
         except ImportError as e:
-            raise RegistryError(f"Cannot import team package {package_name!r}: {e}") from e
+            raise RegistryError(
+                f"Cannot import team package {package_name!r}: {e}"
+            ) from e
         if not hasattr(mod, "get_cards") and not hasattr(mod, "get_card_templates"):
             raise RegistryError(
                 f"Package {package_name!r} has no get_cards() or get_card_templates() function"
@@ -81,7 +83,11 @@ class CardRegistry:
         return [cid for cid, v in self._registry.items() if v["meta"]["team"] == team]
 
     def by_category(self, category: str) -> list[str]:
-        return [cid for cid, v in self._registry.items() if v["meta"]["category"] == category]
+        return [
+            cid
+            for cid, v in self._registry.items()
+            if v["meta"]["category"] == category
+        ]
 
     def __len__(self) -> int:
         return len(self._registry)

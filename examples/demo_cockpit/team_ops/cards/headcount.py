@@ -33,7 +33,12 @@ def render(context: dict):
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
         ],
-        style={"padding": "16px", "background": "#fff", "border": "1px solid #dee2e6", "borderRadius": "6px"},
+        style={
+            "padding": "16px",
+            "background": "#fff",
+            "border": "1px solid #dee2e6",
+            "borderRadius": "6px",
+        },
     )
 
 

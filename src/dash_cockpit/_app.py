@@ -29,7 +29,9 @@ def _backend_filename(backend: ExportBackend, page_name: str, label: str) -> str
     fn = getattr(backend, "filename_for", None)
     if callable(fn):
         return fn(page_name)
-    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (page_name or "page"))
+    safe = "".join(
+        c if c.isalnum() or c in "-_" else "_" for c in (page_name or "page")
+    )
     ext = label.lower().split()[0] or "bin"
     return f"{safe}.{ext}"
 
@@ -104,13 +106,23 @@ class CockpitApp:
                     [
                         html.Div("Choose a format:", className="mb-2"),
                         radios,
-                        html.Div(id="_cockpit_export_status", className="text-muted small mt-2"),
+                        html.Div(
+                            id="_cockpit_export_status",
+                            className="text-muted small mt-2",
+                        ),
                     ]
                 ),
                 dbc.ModalFooter(
                     [
-                        dbc.Button("Cancel", id="_cockpit_export_cancel", color="secondary", outline=True),
-                        dbc.Button("Download", id="_cockpit_export_run", color="primary"),
+                        dbc.Button(
+                            "Cancel",
+                            id="_cockpit_export_cancel",
+                            color="secondary",
+                            outline=True,
+                        ),
+                        dbc.Button(
+                            "Download", id="_cockpit_export_run", color="primary"
+                        ),
                     ]
                 ),
             ],
@@ -203,7 +215,10 @@ class CockpitApp:
                 if isinstance(page, ConfiguratorPage):
                     data = configurator_export_data(working or [], self._registry)
                     if not data.cards:
-                        return no_update, "Working list is empty — add cards before exporting."
+                        return (
+                            no_update,
+                            "Working list is empty — add cards before exporting.",
+                        )
                     payload = backend.export(data)
                 else:
                     payload = export_page(page, self._registry, backend)

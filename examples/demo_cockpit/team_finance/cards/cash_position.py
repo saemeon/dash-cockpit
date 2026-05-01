@@ -20,7 +20,14 @@ def render(context: dict):
     rows = []
     for label, value, sentiment in items:
         color = "#198754" if sentiment == "positive" else "#dc3545"
-        rows.append(html.Tr([html.Td(label), html.Td(value, style={"color": color, "fontWeight": "bold"})]))
+        rows.append(
+            html.Tr(
+                [
+                    html.Td(label),
+                    html.Td(value, style={"color": color, "fontWeight": "bold"}),
+                ]
+            )
+        )
 
     return html.Div(
         [
@@ -31,7 +38,12 @@ def render(context: dict):
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
         ],
-        style={"padding": "16px", "background": "#fff", "border": "1px solid #dee2e6", "borderRadius": "6px"},
+        style={
+            "padding": "16px",
+            "background": "#fff",
+            "border": "1px solid #dee2e6",
+            "borderRadius": "6px",
+        },
     )
 
 

@@ -66,7 +66,9 @@ def classify_card(card: Any) -> set[str]:
     return facets
 
 
-def build_page_export_data(page, registry, page_metadata: dict | None = None) -> PageExportData:
+def build_page_export_data(
+    page, registry, page_metadata: dict | None = None
+) -> PageExportData:
     """Snapshot a page into a PageExportData payload for an ExportBackend.
 
     Resolves card IDs to (meta, card_obj) pairs via the registry. Unknown IDs are skipped.
@@ -91,7 +93,9 @@ def build_page_export_data(page, registry, page_metadata: dict | None = None) ->
     )
 
 
-def export_page(page, registry, backend: ExportBackend, page_metadata: dict | None = None) -> bytes:
+def export_page(
+    page, registry, backend: ExportBackend, page_metadata: dict | None = None
+) -> bytes:
     """Snapshot the page and hand it to the export backend."""
     data = build_page_export_data(page, registry, page_metadata=page_metadata)
     return backend.export(data)

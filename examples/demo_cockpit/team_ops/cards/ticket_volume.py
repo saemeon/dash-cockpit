@@ -20,8 +20,19 @@ _STATS = [
 def render(context: dict):
     items = [
         html.Div(
-            [html.Span(label, style={"color": "#6c757d"}), html.Span(str(val), style={"color": color, "fontWeight": "bold", "marginLeft": "auto"})],
-            style={"display": "flex", "justifyContent": "space-between", "padding": "4px 0", "borderBottom": "1px solid #f0f0f0"},
+            [
+                html.Span(label, style={"color": "#6c757d"}),
+                html.Span(
+                    str(val),
+                    style={"color": color, "fontWeight": "bold", "marginLeft": "auto"},
+                ),
+            ],
+            style={
+                "display": "flex",
+                "justifyContent": "space-between",
+                "padding": "4px 0",
+                "borderBottom": "1px solid #f0f0f0",
+            },
         )
         for label, val, color in _STATS
     ]
@@ -31,7 +42,12 @@ def render(context: dict):
             html.P("This week", style={"color": "#6c757d", "fontSize": "0.85em"}),
             html.Div(items),
         ],
-        style={"padding": "16px", "background": "#fff", "border": "1px solid #dee2e6", "borderRadius": "6px"},
+        style={
+            "padding": "16px",
+            "background": "#fff",
+            "border": "1px solid #dee2e6",
+            "borderRadius": "6px",
+        },
     )
 
 

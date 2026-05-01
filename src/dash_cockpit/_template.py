@@ -66,13 +66,17 @@ def card_id_for(template_id: str, params: dict[str, Any]) -> str:
     return f"{template_id}-{_stable_hash(params)}"
 
 
-def fanout_params(template: CardTemplate, params: dict[str, Any]) -> list[dict[str, Any]]:
+def fanout_params(
+    template: CardTemplate, params: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Expand multi_select params into one params dict per scalar value.
 
     If multiple multi_selects are present, take the cartesian product. If a multi_select
     is empty, the result is empty (no instantiations).
     """
-    multi = [p.name for p in template.TEMPLATE_META.parameters if p.type == "multi_select"]
+    multi = [
+        p.name for p in template.TEMPLATE_META.parameters if p.type == "multi_select"
+    ]
     if not multi:
         return [dict(params)]
 

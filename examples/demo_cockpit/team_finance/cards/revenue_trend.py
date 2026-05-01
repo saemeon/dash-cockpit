@@ -26,16 +26,32 @@ def render(context: dict):
     return html.Div(
         [
             html.H5("Revenue Trend", style={"marginBottom": "8px"}),
-            html.P("$12.4M ▲ 22.8% vs prior year", style={"color": "#198754", "fontWeight": "bold"}),
+            html.P(
+                "$12.4M ▲ 22.8% vs prior year",
+                style={"color": "#198754", "fontWeight": "bold"},
+            ),
             html.Table(
                 [
-                    html.Thead(html.Tr([html.Th("Month"), html.Th("Current Year"), html.Th("Prior Year")])),
+                    html.Thead(
+                        html.Tr(
+                            [
+                                html.Th("Month"),
+                                html.Th("Current Year"),
+                                html.Th("Prior Year"),
+                            ]
+                        )
+                    ),
                     html.Tbody(rows),
                 ],
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
         ],
-        style={"padding": "16px", "background": "#fff", "border": "1px solid #dee2e6", "borderRadius": "6px"},
+        style={
+            "padding": "16px",
+            "background": "#fff",
+            "border": "1px solid #dee2e6",
+            "borderRadius": "6px",
+        },
     )
 
 
@@ -46,7 +62,9 @@ class _Card:
         return render(context)
 
     def get_tables(self) -> dict[str, pd.DataFrame]:
-        df = pd.DataFrame(_DATA, columns=["month", "current_year_musd", "prior_year_musd"])
+        df = pd.DataFrame(
+            _DATA, columns=["month", "current_year_musd", "prior_year_musd"]
+        )
         return {"revenue_trend": df}
 
 

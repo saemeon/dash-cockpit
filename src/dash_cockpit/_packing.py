@@ -20,7 +20,9 @@ def col_width(n: int) -> int:
     return max(1, 12 // n)
 
 
-def pack_row(components: list[Component], *, width_basis: int | None = None) -> Component:
+def pack_row(
+    components: list[Component], *, width_basis: int | None = None
+) -> Component:
     """Pack components into one Bootstrap row.
 
     width_basis: if given, every column uses `col_width(width_basis)` (consistent

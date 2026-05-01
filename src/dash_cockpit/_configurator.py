@@ -310,44 +310,41 @@ def register_configurator_callbacks(app: "dash.Dash", registry: "CardRegistry") 
     @app.callback(
         Output(FORM_ID, "children"),
         Input(TEMPLATE_PICKER_ID, "value"),
-        prevent_initial_call=True,
-    )
-    def _swap_form(template_id):
-        if not template_id:
-            return no_update
-        try:
-            tpl = registry.get_template(template_id)
-        except KeyError:
-            return html.Div(f"Unknown template: {template_id}", className="text-danger")
-        return render_parameter_form(tpl)
-
-    @app.callback(
-        Output(FORM_ID, "children"),
         Input({"type": "_cockpit_cfg_param", "name": ALL}, "value"),
         State({"type": "_cockpit_cfg_param", "name": ALL}, "id"),
-        State(TEMPLATE_PICKER_ID, "value"),
-        State(FORM_ID, "children"),
         prevent_initial_call=True,
     )
-    def _refresh_form(values, ids, template_id, current_children):
-        """Recompute dropdown options via `options_fn` when param values change.
+    def _swap_or_refresh_form(template_id, param_values, ids):
+        """Handle both template swaps and parameter-change-driven form rerenders.
 
-        We rerender the form with `current_params` so that `options_fn` can
-        compute cascaded options. To avoid infinite update loops we compare
-        the rendered children and return `no_update` when nothing changed.
+        - If the template picker triggered, render the template's empty form.
+        - If parameter values triggered, call any `options_fn` with the current
+          params and re-render the form so cascading selects update.
         """
-        if not template_id:
+        ctx = callback_context
+        if not ctx.triggered:
             return no_update
+        trigger = ctx.triggered[0]["prop_id"]
+
+        # Template picker changed
+        if trigger.startswith(TEMPLATE_PICKER_ID):
+            if not template_id:
+                return no_update
+            try:
+                tpl = registry.get_template(template_id)
+            except KeyError:
+                return html.Div(
+                    f"Unknown template: {template_id}", className="text-danger"
+                )
+            return render_parameter_form(tpl)
+
+        # Parameter values changed
         try:
             tpl = registry.get_template(template_id)
-        except KeyError:
+        except Exception:
             return no_update
-        params = {i["name"]: v for i, v in zip(ids, values, strict=False)}
-        new_children = render_parameter_form(tpl, current_params=params)
-        # cheap equality check — string comparison of rendered structure
-        if str(new_children) == str(current_children):
-            return no_update
-        return new_children
+        params = {i["name"]: v for i, v in zip(ids, param_values, strict=False)}
+        return render_parameter_form(tpl, current_params=params)
 
     @app.callback(
         Output(WORKING_LIST_STORE_ID, "data"),

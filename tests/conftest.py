@@ -18,7 +18,12 @@ def _make_meta(**overrides) -> CardMeta:
 
 
 class _SimpleCard:
-    def __init__(self, card_id: str = "test_card", team: str = "test_team", category: str = "test"):
+    def __init__(
+        self,
+        card_id: str = "test_card",
+        team: str = "test_team",
+        category: str = "test",
+    ):
         self.CARD_META = _make_meta(id=card_id, team=team, category=category)
 
     def render(self, context: dict):

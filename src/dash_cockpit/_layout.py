@@ -21,7 +21,12 @@ def _resolve_card(card_id: str, registry: "CardRegistry", context: dict) -> "Com
     except KeyError:
         return html.Div(
             f"Unknown card: {card_id!r}",
-            style={"color": "#856404", "background": "#fff3cd", "padding": "8px", "borderRadius": "4px"},
+            style={
+                "color": "#856404",
+                "background": "#fff3cd",
+                "padding": "8px",
+                "borderRadius": "4px",
+            },
         )
     card_obj = _CardShim(entry["render"], entry["meta"])
     return error_boundary(card_obj, context)
@@ -38,7 +43,9 @@ class _CardShim:
         return self._render_fn(context)
 
 
-def render_page(page: Page, registry: "CardRegistry", context: dict | None = None) -> "Component":
+def render_page(
+    page: Page, registry: "CardRegistry", context: dict | None = None
+) -> "Component":
     if context is None:
         context = {}
 

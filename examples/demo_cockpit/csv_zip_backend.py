@@ -35,5 +35,7 @@ class CSVZipBackend:
         return buf.getvalue()
 
     def filename_for(self, page_name: str) -> str:
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (page_name or "page"))
+        safe = "".join(
+            c if c.isalnum() or c in "-_" else "_" for c in (page_name or "page")
+        )
         return f"{safe}.zip"
