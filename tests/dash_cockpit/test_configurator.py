@@ -44,7 +44,9 @@ class _KpiTemplate:
         category="finance",
         parameters=[
             ParameterSpec("year", "Year", "select", options=[2024, 2025], default=2025),
-            ParameterSpec("metric", "Metric", "select", options=["rev", "cost"], default="rev"),
+            ParameterSpec(
+                "metric", "Metric", "select", options=["rev", "cost"], default="rev"
+            ),
         ],
     )
 
@@ -91,7 +93,9 @@ def test_render_parameter_form_has_one_div_per_field():
 
 def test_render_parameter_form_no_params():
     class _Empty:
-        TEMPLATE_META = TemplateMeta(id="e", title="E", team="t", description="", category="c", parameters=[])
+        TEMPLATE_META = TemplateMeta(
+            id="e", title="E", team="t", description="", category="c", parameters=[]
+        )
 
         def instantiate(self, p):
             return None
@@ -142,7 +146,9 @@ def test_instantiate_working_list_simple():
         reg,
     )
     assert len(cards) == 1
-    assert cards[0].CARD_META["id"] == card_id_for("kpi", {"year": 2025, "metric": "rev"})
+    assert cards[0].CARD_META["id"] == card_id_for(
+        "kpi", {"year": 2025, "metric": "rev"}
+    )
 
 
 def test_instantiate_working_list_skips_unknown_template():
@@ -198,3 +204,85 @@ def test_configurator_export_data_empty():
     reg = _make_registry(_KpiTemplate())
     data = configurator_export_data([], reg)
     assert data.cards == []
+
+
+def test_options_fn_applies_based_on_current_params():
+    class _CascadeTemplate:
+        TEMPLATE_META = TemplateMeta(
+            id="cascade",
+            title="Cascade",
+            team="finance",
+            description="",
+            category="finance",
+            parameters=[
+                ParameterSpec(
+                    "year", "Year", "select", options=[2024, 2025], default=2025
+                ),
+                ParameterSpec(
+                    "metric",
+                    "Metric",
+                    "select",
+                    options=None,
+                    options_fn=lambda params: (
+                        ["rev"] if params.get("year") == 2025 else ["cost"]
+                    ),
+                ),
+            ],
+        )
+
+        def instantiate(self, params):
+            return _ConcreteCard(params)
+
+    # When year == 2025 the metric options should be ['rev']
+    rendered = render_parameter_form(_CascadeTemplate(), current_params={"year": 2025})
+    assert "rev" in str(rendered)
+
+    # When year == 2024 the metric options should be ['cost']
+    rendered2 = render_parameter_form(_CascadeTemplate(), current_params={"year": 2024})
+    assert "cost" in str(rendered2)
+
+
+def test_card_actions_show_in_tile_menu():
+    class _ActionCard:
+        def __init__(self, p):
+            self._p = p
+            self.CARD_META = {
+                "id": "act1",
+                "title": "Act",
+                "team": "t",
+                "description": "",
+                "refresh_interval": 0,
+                "category": "c",
+                "actions": [
+                    {"id": "refresh", "label": "Refresh"},
+                    {"id": "settings", "label": "Settings"},
+                ],
+            }
+
+        def render(self, ctx):
+            return html.Div("ok")
+
+    class _ActionTemplate:
+        TEMPLATE_META = TemplateMeta(
+            id="act_tpl",
+            title="A",
+            team="t",
+            description="",
+            category="c",
+            parameters=[],
+        )
+
+        def instantiate(self, params):
+            return _ActionCard(params)
+
+    reg = _make_registry(_ActionTemplate())
+    cards = instantiate_working_list(
+        [
+            {"template_id": "act_tpl", "params": {}},
+        ],
+        reg,
+    )
+    rendered = render_working_list(cards)
+    # The menu should include the action labels
+    assert "Refresh" in str(rendered)
+    assert "Settings" in str(rendered)

@@ -40,50 +40,81 @@ def remove_btn_id(card_id: str) -> dict[str, str]:
     return {"type": "_cockpit_cfg_remove", "card_id": card_id}
 
 
-def _field_component(spec: ParameterSpec) -> "Component":
-    """Render one ParameterSpec as a labelled input. Cascading options_fn deferred for v1."""
+def _field_component(
+    spec: ParameterSpec, current_params: dict[str, Any] | None = None
+) -> "Component":
+    """Render one ParameterSpec as a labelled input.
+
+    If `spec.options_fn` is set, call it with `current_params` to compute
+    cascading dropdown options. The `current_params` values are used to
+    prefill the input so rerendering the form preserves user choices.
+    """
     options = spec.options or []
-    label = html.Label(spec.label, htmlFor=str(param_input_id(spec.name)), className="form-label")
+    if spec.options_fn is not None:
+        try:
+            options = spec.options_fn(current_params or {}) or []
+        except Exception:
+            options = spec.options or []
+    label = html.Label(
+        spec.label, htmlFor=str(param_input_id(spec.name)), className="form-label"
+    )
+
+    # current value wins over the static default when present
+    if current_params and spec.name in current_params:
+        value = current_params.get(spec.name)
+    else:
+        value = spec.default
 
     if spec.type == "select":
         widget = dcc.Dropdown(
             id=param_input_id(spec.name),
             options=[{"label": str(o), "value": o} for o in options],
-            value=spec.default,
+            value=value,
             clearable=not spec.required,
         )
     elif spec.type == "multi_select":
         widget = dcc.Dropdown(
             id=param_input_id(spec.name),
             options=[{"label": str(o), "value": o} for o in options],
-            value=spec.default or [],
+            value=value or [],
             multi=True,
         )
     elif spec.type == "number":
         widget = dbc.Input(
             id=param_input_id(spec.name),
             type="number",
-            value=spec.default,
+            value=value,
         )
     elif spec.type == "date":
         widget = dcc.DatePickerSingle(
             id=param_input_id(spec.name),
-            date=spec.default,
+            date=value,
         )
     else:  # "text" or fallback
         widget = dbc.Input(
             id=param_input_id(spec.name),
             type="text",
-            value=spec.default or "",
+            value=value or "",
         )
     return html.Div([label, widget], className="mb-3")
 
 
-def render_parameter_form(template: "CardTemplate") -> "Component":
-    """Render the form skeleton for a template's parameter list."""
-    fields = [_field_component(p) for p in template.TEMPLATE_META.parameters]
+def render_parameter_form(
+    template: "CardTemplate", current_params: dict[str, Any] | None = None
+) -> "Component":
+    """Render the form skeleton for a template's parameter list.
+
+    `current_params` is used when the form is being rerendered due to
+    cascading `options_fn` changes so that user-entered values are preserved.
+    """
+    fields = [
+        _field_component(p, current_params=current_params)
+        for p in template.TEMPLATE_META.parameters
+    ]
     if not fields:
-        fields = [html.Div("This template takes no parameters.", className="text-muted")]
+        fields = [
+            html.Div("This template takes no parameters.", className="text-muted")
+        ]
     return html.Div(fields)
 
 
@@ -136,6 +167,19 @@ def _render_card_tile(card: Any, context: dict) -> "Component":
     menu = dbc.DropdownMenu(
         label="⋮",
         children=[
+            # Inject opt-in actions declared by the card (each item is {"id": ..., "label": ...})
+            *[
+                dbc.DropdownMenuItem(
+                    a.get("label", a.get("id")),
+                    id={
+                        "type": "_cockpit_card_action",
+                        "card_id": cid,
+                        "action": a.get("id"),
+                    },
+                    n_clicks=0,
+                )
+                for a in card.CARD_META.get("actions", [])
+            ],
             dbc.DropdownMenuItem(
                 "Remove",
                 id=remove_btn_id(cid),
@@ -186,7 +230,9 @@ def render_working_list(
     return pack_grid(tiles, columns=columns)
 
 
-def render_configurator(page: "ConfiguratorPage", registry: "CardRegistry") -> "Component":
+def render_configurator(
+    page: "ConfiguratorPage", registry: "CardRegistry"
+) -> "Component":
     """Initial server-side layout for a ConfiguratorPage. Callbacks fill in the rest."""
     available_templates = []
     for tid in page.template_ids:
@@ -223,7 +269,9 @@ def render_configurator(page: "ConfiguratorPage", registry: "CardRegistry") -> "
             html.Div(
                 [
                     dbc.Button("Add", id=ADD_BTN_ID, color="primary", className="me-2"),
-                    dbc.Button("Clear", id=CLEAR_BTN_ID, color="secondary", outline=True),
+                    dbc.Button(
+                        "Clear", id=CLEAR_BTN_ID, color="secondary", outline=True
+                    ),
                 ],
                 className="mt-3",
             ),
@@ -274,6 +322,34 @@ def register_configurator_callbacks(app: "dash.Dash", registry: "CardRegistry") 
         return render_parameter_form(tpl)
 
     @app.callback(
+        Output(FORM_ID, "children"),
+        Input({"type": "_cockpit_cfg_param", "name": ALL}, "value"),
+        State({"type": "_cockpit_cfg_param", "name": ALL}, "id"),
+        State(TEMPLATE_PICKER_ID, "value"),
+        State(FORM_ID, "children"),
+        prevent_initial_call=True,
+    )
+    def _refresh_form(values, ids, template_id, current_children):
+        """Recompute dropdown options via `options_fn` when param values change.
+
+        We rerender the form with `current_params` so that `options_fn` can
+        compute cascaded options. To avoid infinite update loops we compare
+        the rendered children and return `no_update` when nothing changed.
+        """
+        if not template_id:
+            return no_update
+        try:
+            tpl = registry.get_template(template_id)
+        except KeyError:
+            return no_update
+        params = {i["name"]: v for i, v in zip(ids, values, strict=False)}
+        new_children = render_parameter_form(tpl, current_params=params)
+        # cheap equality check — string comparison of rendered structure
+        if str(new_children) == str(current_children):
+            return no_update
+        return new_children
+
+    @app.callback(
         Output(WORKING_LIST_STORE_ID, "data"),
         Output(STATUS_ID, "children"),
         Input(ADD_BTN_ID, "n_clicks"),
@@ -285,7 +361,9 @@ def register_configurator_callbacks(app: "dash.Dash", registry: "CardRegistry") 
         State(WORKING_LIST_STORE_ID, "data"),
         prevent_initial_call=True,
     )
-    def _mutate_working(add_clicks, clear_clicks, remove_clicks, template_id, ids, values, current):
+    def _mutate_working(
+        add_clicks, clear_clicks, remove_clicks, template_id, ids, values, current
+    ):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update

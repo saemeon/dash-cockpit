@@ -15,6 +15,10 @@ class CardMeta(TypedDict):
     # Page declares total grid_columns (e.g. 4); a card with size=(2, 1) spans
     # half a 4-column page. Height units stack vertically per row.
     size: NotRequired[tuple[int, int]]
+    # Optional per-card actions exposed to the cockpit menu. Each action is a
+    # small mapping with at least `id` and `label`. The cockpit renders these
+    # as menu items and emits pattern-matching callback events when clicked.
+    actions: NotRequired[list[dict]]
 
 
 @runtime_checkable
