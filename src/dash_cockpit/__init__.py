@@ -1,3 +1,8 @@
+import os as _os
+
+# dash-snap-grid requires React 18.2; set before any dash import resolves
+_os.environ.setdefault("REACT_VERSION", "18.2.0")
+
 from dash_cockpit._app import CockpitApp
 from dash_cockpit._card import Card, CardMeta
 from dash_cockpit._export import (

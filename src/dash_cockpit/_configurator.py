@@ -227,7 +227,13 @@ def render_working_list(
             className="text-muted p-4",
         )
     tiles = [_render_card_tile(c, context) for c in cards]
-    return pack_grid(tiles, columns=columns)
+    ids = [c.CARD_META["id"] for c in cards]
+    return pack_grid(
+        tiles,
+        ids=ids,
+        columns=columns,
+        grid_id="_cockpit_cfg_grid",
+    )
 
 
 def render_configurator(

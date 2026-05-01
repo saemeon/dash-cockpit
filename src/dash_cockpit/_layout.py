@@ -54,7 +54,12 @@ def render_page(
 
     if isinstance(page, TeamPage):
         components = [_resolve_card(cid, registry, context) for cid in page.card_ids]
-        return pack_grid(components, columns=page.columns)
+        return pack_grid(
+            components,
+            ids=list(page.card_ids),
+            columns=page.columns,
+            grid_id=f"_cockpit_grid_{page.name}",
+        )
 
     # UserPage: 2D layout, each row may have a different number of cards
     rendered_rows = [
