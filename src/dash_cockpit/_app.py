@@ -1,3 +1,5 @@
+"""The Dash-app shell — sidebar nav, page rendering, and export modal."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,11 +15,14 @@ from dash_cockpit._configurator import (
 )
 from dash_cockpit._export import ExportBackend, export_page
 from dash_cockpit._layout import render_page
+from dash_cockpit._packing import register_layout_callbacks
 from dash_cockpit._page import ConfiguratorPage, Page
+from dash_cockpit._refresh import register_refresh_callbacks
 from dash_cockpit._registry import CardRegistry
 
 
 def _nav_link(page: Page, index: int) -> dbc.NavLink:
+    """Build one sidebar nav link pointing at ``/<index>``."""
     return dbc.NavLink(
         page.name,
         href=f"/{index}",
@@ -26,6 +31,25 @@ def _nav_link(page: Page, index: int) -> dbc.NavLink:
 
 
 def _backend_filename(backend: ExportBackend, page_name: str, label: str) -> str:
+    """Pick a download filename — backend's ``filename_for`` wins, else fall back.
+
+    Parameters
+    ----------
+    backend : ExportBackend
+        Active backend. If it implements ``filename_for(page_name) -> str``,
+        that result is used.
+    page_name : str
+        Name of the page being exported. Sanitised for filesystem safety in
+        the fallback path.
+    label : str
+        Format label from the modal (e.g. ``"CSV Zip"``). The first word
+        becomes the file extension in the fallback path.
+
+    Returns
+    -------
+    str
+        Filename including extension.
+    """
     fn = getattr(backend, "filename_for", None)
     if callable(fn):
         return fn(page_name)
@@ -37,6 +61,53 @@ def _backend_filename(backend: ExportBackend, page_name: str, label: str) -> str
 
 
 class CockpitApp:
+    """Cards-first Dash app — sidebar nav, page rendering, optional export.
+
+    Wraps a :class:`dash.Dash` instance with the cockpit's structure: a
+    fixed sidebar listing pages, a content area that renders the current
+    page, and an optional download modal driven by registered export
+    backends.
+
+    Parameters
+    ----------
+    registry : CardRegistry
+        Pre-populated registry of cards and templates.
+    pages : list[Page]
+        Pages shown in the sidebar in declaration order. Each page is
+        addressable at ``/<index>``; the first is the default.
+    title : str, optional
+        Browser tab title and sidebar header. By default ``"Cockpit"``.
+    theme : str, optional
+        Bootstrap theme URL passed to ``dash.Dash``. Use any theme from
+        :mod:`dash_bootstrap_components.themes`. By default
+        :data:`dbc.themes.BOOTSTRAP`.
+    export_backends : dict[str, ExportBackend], optional
+        Format label → backend mapping. When non-empty, a "Download report"
+        button appears in the sidebar and a format-radio modal lets the user
+        pick a backend. By default ``None`` (no export UI).
+
+    Attributes
+    ----------
+    app : dash.Dash
+        The underlying Dash app, exposed for advanced wiring (custom
+        callbacks, server settings).
+    server : flask.Flask
+        The underlying Flask server, useful when deploying behind a WSGI
+        host.
+
+    Examples
+    --------
+    >>> from dash_cockpit import CardRegistry, CockpitApp, TeamPage
+    >>> registry = CardRegistry()
+    >>> registry.load_packages(["team_finance"])
+    >>> app = CockpitApp(
+    ...     registry=registry,
+    ...     pages=[TeamPage(name="Overview", card_ids=["revenue_trend"])],
+    ...     title="Executive Cockpit",
+    ... )
+    >>> app.run(debug=True)  # doctest: +SKIP
+    """
+
     def __init__(
         self,
         registry: CardRegistry,
@@ -57,6 +128,8 @@ class CockpitApp:
         self._app.title = title
         self._app.layout = self._build_layout()
         self._register_callbacks()
+        register_layout_callbacks(self._app)
+        register_refresh_callbacks(self._app, self._registry)
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(self._app, self._registry)
 
@@ -183,9 +256,7 @@ class CockpitApp:
             if not ctx.triggered:
                 return is_open
             trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-            if trigger == "_cockpit_export_open":
-                return True
-            return False  # cancel or run -> close
+            return trigger == "_cockpit_export_open"
 
         export_states = [
             State("_cockpit_export_format", "value"),
@@ -228,12 +299,22 @@ class CockpitApp:
             return dcc.send_bytes(lambda buf: buf.write(payload), filename=filename), ""
 
     def run(self, **kwargs) -> None:
+        """Start the Dash dev server.
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded verbatim to :meth:`dash.Dash.run`. Common options:
+            ``debug=True``, ``port=8050``, ``host="0.0.0.0"``.
+        """
         self._app.run(**kwargs)
 
     @property
     def server(self):
+        """The underlying Flask server (for production WSGI deployment)."""
         return self._app.server
 
     @property
     def app(self) -> dash.Dash:
+        """The underlying :class:`dash.Dash` instance."""
         return self._app

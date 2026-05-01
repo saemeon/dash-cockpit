@@ -43,8 +43,15 @@ class _KpiTemplate:
         description="Pick a year and metric",
         category="finance",
         parameters=[
-            ParameterSpec(name="year", label="Year", type="select", options=[2024, 2025]),
-            ParameterSpec(name="metric", label="Metric", type="select", options=["revenue", "cost"]),
+            ParameterSpec(
+                name="year", label="Year", type="select", options=[2024, 2025]
+            ),
+            ParameterSpec(
+                name="metric",
+                label="Metric",
+                type="select",
+                options=["revenue", "cost"],
+            ),
         ],
     )
 

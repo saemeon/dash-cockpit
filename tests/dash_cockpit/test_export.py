@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 from dash import html
 
 from dash_cockpit._export import (

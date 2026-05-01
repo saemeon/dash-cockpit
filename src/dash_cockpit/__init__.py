@@ -1,6 +1,24 @@
+"""dash-cockpit — cards-first executive analytics cockpit framework for Dash.
+
+Build a single Dash app that aggregates self-contained cards published by
+multiple team packages. The cockpit owns layout and navigation; teams own
+data and rendering. See ``CLAUDE.md`` for the full design.
+
+Examples
+--------
+>>> from dash_cockpit import CardRegistry, CockpitApp, TeamPage
+>>> registry = CardRegistry()
+>>> registry.load_packages(["team_finance", "team_ops"])
+>>> app = CockpitApp(
+...     registry=registry,
+...     pages=[TeamPage(name="Overview", card_ids=["revenue_trend"])],
+... )
+>>> app.run(debug=True)  # doctest: +SKIP
+"""
+
 import os as _os
 
-# dash-snap-grid requires React 18.2; set before any dash import resolves
+# dash-snap-grid requires React 18.2; set before any dash import resolves.
 _os.environ.setdefault("REACT_VERSION", "18.2.0")
 
 from dash_cockpit._app import CockpitApp
@@ -28,28 +46,35 @@ from dash_cockpit._template import (
 from dash_cockpit._version import __version__
 
 __all__ = [
+    # Cards
     "Card",
-    "CardExportEntry",
     "CardMeta",
-    "CardRegistry",
+    # Templates
     "CardTemplate",
-    "ChartCard",
-    "CockpitApp",
+    "ParameterSpec",
+    "TemplateMeta",
+    "card_id_for",
+    "fanout_params",
+    # Pages
     "ConfiguratorPage",
+    "Page",
+    "TeamPage",
+    "UserPage",
+    # Registry
+    "CardRegistry",
+    "RegistryError",
+    # App
+    "CockpitApp",
+    # Export
+    "CardExportEntry",
+    "ChartCard",
     "DocumentCard",
     "ExportBackend",
-    "Page",
     "PageExportData",
-    "ParameterSpec",
-    "RegistryError",
     "TabularCard",
-    "TeamPage",
-    "TemplateMeta",
-    "UserPage",
-    "__version__",
     "build_page_export_data",
-    "card_id_for",
     "classify_card",
     "export_page",
-    "fanout_params",
+    # Misc
+    "__version__",
 ]

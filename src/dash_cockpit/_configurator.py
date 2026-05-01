@@ -1,3 +1,20 @@
+"""Configurator page rendering — picker + form + working list of cards.
+
+The configurator is the runtime composition layer: a user picks a template,
+fills in parameters, and clicks "Add". The resulting card joins a working
+list that lives in a session :class:`dcc.Store`. Multi-select parameters
+fan out into one card per scalar value.
+
+This module owns three things:
+
+- The form-rendering helpers (:func:`render_parameter_form` and friends).
+- The pattern-matching callback wiring registered by
+  :func:`register_configurator_callbacks`.
+- The export bridge :func:`configurator_export_data`, which lets the cockpit
+  export a configurator's live working list rather than its static
+  ``initial_card_ids``.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -7,6 +24,7 @@ from dash import dcc, html
 
 from dash_cockpit._error import error_boundary
 from dash_cockpit._packing import pack_grid
+from dash_cockpit._refresh import wrap_for_refresh
 from dash_cockpit._template import (
     ParameterSpec,
     card_id_for,
@@ -33,16 +51,18 @@ STATUS_ID = "_cockpit_cfg_status"
 
 
 def param_input_id(name: str) -> dict[str, str]:
+    """Pattern-matching id for a parameter input widget."""
     return {"type": "_cockpit_cfg_param", "name": name}
 
 
 def remove_btn_id(card_id: str) -> dict[str, str]:
+    """Pattern-matching id for a working-list "Remove" menu item."""
     return {"type": "_cockpit_cfg_remove", "card_id": card_id}
 
 
 def _field_component(
     spec: ParameterSpec, current_params: dict[str, Any] | None = None
-) -> "Component":
+) -> Component:
     """Render one ParameterSpec as a labelled input.
 
     If `spec.options_fn` is set, call it with `current_params` to compute
@@ -100,12 +120,24 @@ def _field_component(
 
 
 def render_parameter_form(
-    template: "CardTemplate", current_params: dict[str, Any] | None = None
-) -> "Component":
-    """Render the form skeleton for a template's parameter list.
+    template: CardTemplate, current_params: dict[str, Any] | None = None
+) -> Component:
+    """Render the form for a template's parameter list.
 
-    `current_params` is used when the form is being rerendered due to
-    cascading `options_fn` changes so that user-entered values are preserved.
+    Parameters
+    ----------
+    template : CardTemplate
+        Template whose parameters drive the form.
+    current_params : dict, optional
+        Existing values, used when the form is rerendered after a
+        cascading-options change so user input is preserved. By default
+        ``None``.
+
+    Returns
+    -------
+    Component
+        A :class:`html.Div` containing one labelled input per
+        :class:`ParameterSpec`, or a "no parameters" placeholder.
     """
     fields = [
         _field_component(p, current_params=current_params)
@@ -118,7 +150,7 @@ def render_parameter_form(
     return html.Div(fields)
 
 
-def _instantiate_entry(template: "CardTemplate", params: dict[str, Any]) -> Any:
+def _instantiate_entry(template: CardTemplate, params: dict[str, Any]) -> Any:
     """Run instantiate(params) and tag the resulting card with a deterministic id.
 
     The card may already set its own id; we override it so two configurator entries
@@ -129,22 +161,33 @@ def _instantiate_entry(template: "CardTemplate", params: dict[str, Any]) -> Any:
     meta = dict(card.CARD_META)
     meta["id"] = desired_id
     # Some teams may have used an immutable mapping; if so just leave it.
-    try:
+    import contextlib
+
+    with contextlib.suppress(AttributeError, TypeError):
         card.CARD_META = meta  # type: ignore[attr-defined]
-    except (AttributeError, TypeError):
-        pass
     return card
 
 
 def instantiate_working_list(
-    working: list[dict[str, Any]], registry: "CardRegistry"
+    working: list[dict[str, Any]], registry: CardRegistry
 ) -> list[Any]:
-    """Resolve the working list entries to live Card objects.
+    """Resolve the JSON-serialisable working list into live :class:`Card` objects.
 
-    `working` is the JSON-serialisable list that lives in `dcc.Store`:
-        [{"template_id": "kpi", "params": {...}}, ...]
-    Unknown template IDs are skipped silently — they'll show up missing rather
-    than crash the page.
+    Parameters
+    ----------
+    working : list[dict]
+        The list as it lives in :class:`dcc.Store`, of the form
+        ``[{"template_id": "kpi", "params": {...}}, ...]``.
+    registry : CardRegistry
+        Registry used to resolve template IDs.
+
+    Returns
+    -------
+    list
+        Live card objects in declaration order, expanded by
+        :func:`fanout_params` for any ``multi_select`` parameters. Entries
+        whose ``template_id`` is not registered are silently skipped (the
+        page renders without them rather than crashing).
     """
     cards: list[Any] = []
     for entry in working:
@@ -152,18 +195,21 @@ def instantiate_working_list(
             tpl = registry.get_template(entry["template_id"])
         except KeyError:
             continue
-        for params in fanout_params(tpl, entry.get("params", {})):
-            cards.append(_instantiate_entry(tpl, params))
+        cards.extend(
+            _instantiate_entry(tpl, params)
+            for params in fanout_params(tpl, entry.get("params", {}))
+        )
     return cards
 
 
-def _render_card_tile(card: Any, context: dict) -> "Component":
+def _render_card_tile(card: Any, context: dict) -> Component:
     """Render a single working-list card as a tile with the ⋮ menu overlay.
 
     Returns a bare component (no column wrapper) — packing is the caller's job.
     """
     cid = card.CARD_META["id"]
-    body = error_boundary(card, context)
+    refresh_interval = card.CARD_META.get("refresh_interval", 0)
+    body = wrap_for_refresh(error_boundary(card, context), cid, refresh_interval)
     menu = dbc.DropdownMenu(
         label="⋮",
         children=[
@@ -218,7 +264,24 @@ def _render_card_tile(card: Any, context: dict) -> "Component":
 
 def render_working_list(
     cards: list[Any], columns: int = 2, context: dict | None = None
-) -> "Component":
+) -> Component:
+    """Render the working list of cards as a draggable grid with ⋮ menus.
+
+    Parameters
+    ----------
+    cards : list
+        Live card objects. Empty list renders a hint placeholder.
+    columns : int, optional
+        Grid width in widget units. By default ``2``.
+    context : dict, optional
+        Render context forwarded to each card. By default ``None``.
+
+    Returns
+    -------
+    Component
+        Either the empty-state placeholder, or a :func:`pack_grid` packing
+        of card tiles wrapped with the per-card menu.
+    """
     if context is None:
         context = {}
     if not cards:
@@ -228,18 +291,44 @@ def render_working_list(
         )
     tiles = [_render_card_tile(c, context) for c in cards]
     ids = [c.CARD_META["id"] for c in cards]
+    sizes = [_card_size_from_meta(c.CARD_META) for c in cards]
     return pack_grid(
         tiles,
         ids=ids,
         columns=columns,
-        grid_id="_cockpit_cfg_grid",
+        persist_key="configurator",
+        sizes=sizes,
     )
 
 
-def render_configurator(
-    page: "ConfiguratorPage", registry: "CardRegistry"
-) -> "Component":
-    """Initial server-side layout for a ConfiguratorPage. Callbacks fill in the rest."""
+def _card_size_from_meta(meta: dict) -> tuple[int, int]:
+    size = meta.get("size")
+    if size is None:
+        return (1, 1)
+    w, h = size
+    return (max(1, int(w)), max(1, int(h)))
+
+
+def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Component:
+    """Build the initial layout for a :class:`ConfiguratorPage`.
+
+    Renders the static skeleton — sidebar (template picker, parameter form,
+    Add/Clear buttons), empty cards pane, and the working-list
+    :class:`dcc.Store`. Callbacks registered by
+    :func:`register_configurator_callbacks` fill in the rest.
+
+    Parameters
+    ----------
+    page : ConfiguratorPage
+        The page being rendered.
+    registry : CardRegistry
+        Registry used to resolve ``page.template_ids``.
+
+    Returns
+    -------
+    Component
+        The configurator's root :class:`html.Div`.
+    """
     available_templates = []
     for tid in page.template_ids:
         try:
@@ -309,8 +398,30 @@ def render_configurator(
     )
 
 
-def register_configurator_callbacks(app: "dash.Dash", registry: "CardRegistry") -> None:
-    """Wire all callbacks for ConfiguratorPage rendering. Idempotent: caller decides when to call."""
+def register_configurator_callbacks(app: dash.Dash, registry: CardRegistry) -> None:
+    """Wire all callbacks needed by :class:`ConfiguratorPage` rendering.
+
+    Three callbacks are registered:
+
+    - **Form swap / refresh** — re-renders the parameter form on template
+      change or when ``options_fn`` callbacks need fresh options after
+      cascading parameter changes.
+    - **Mutate working list** — Add/Clear/Remove handlers writing to the
+      :class:`dcc.Store`.
+    - **Render cards pane** — re-renders the working list whenever the
+      store updates.
+
+    Caller is responsible for deciding when to invoke; :class:`CockpitApp`
+    does it automatically when at least one :class:`ConfiguratorPage` is
+    present.
+
+    Parameters
+    ----------
+    app : dash.Dash
+        The Dash app to register callbacks on.
+    registry : CardRegistry
+        Registry used to resolve template IDs at callback time.
+    """
     from dash import ALL, Input, Output, State, callback_context, no_update
 
     @app.callback(
@@ -434,8 +545,27 @@ def register_configurator_callbacks(app: "dash.Dash", registry: "CardRegistry") 
         return render_working_list(cards, columns=2)
 
 
-def configurator_export_data(working: list[dict[str, Any]], registry: "CardRegistry"):
-    """Build PageExportData for a configurator's live working list."""
+def configurator_export_data(working: list[dict[str, Any]], registry: CardRegistry):
+    """Build :class:`PageExportData` for a configurator's live working list.
+
+    The export modal calls this when the active page is a
+    :class:`ConfiguratorPage`, so users export what they actually see
+    (the runtime-built list) rather than the page's static
+    ``initial_card_ids``.
+
+    Parameters
+    ----------
+    working : list[dict]
+        Working list as it lives in :class:`dcc.Store`.
+    registry : CardRegistry
+        Registry used to resolve template IDs.
+
+    Returns
+    -------
+    PageExportData
+        Snapshot ready for an :class:`ExportBackend`. ``page_name`` is set
+        to ``"configurator"``.
+    """
     from dash_cockpit._export import CardExportEntry, PageExportData
 
     cards = instantiate_working_list(working or [], registry)
