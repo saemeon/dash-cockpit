@@ -60,7 +60,7 @@ def build_app() -> CockpitApp:
     return CockpitApp(
         registry=registry,
         pages=pages,
-        title="EDS Cockpit",
+        title="DEMO Cockpit",
         export_backends={"CSV (zip)": CSVZipBackend()},
     )
 
