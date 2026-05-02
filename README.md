@@ -170,6 +170,44 @@ If a card raises an exception, an error placeholder is rendered instead — the 
 └──────────────────────────┘  └──────────────────────────┘
 ```
 
+## Page URLs
+
+Each page is addressable at `/<slug>`. The slug comes from `page.id` if you set it, otherwise it's derived from `page.name` (lowercased, non-alphanumeric runs collapsed to `-`):
+
+```python
+TeamPage(name="Finance Overview", card_ids=[...])      # → /finance-overview
+TeamPage(name="Finance Overview", id="fin", card_ids=[...])  # → /fin
+```
+
+The first page is the default for `/` and any unrecognised slug. Duplicate slugs raise `ValueError` at construction — set `page.id` explicitly to disambiguate:
+
+```python
+pages = [
+    TeamPage(name="Finance", id="finance-old", card_ids=[...]),
+    TeamPage(name="Finance", id="finance-new", card_ids=[...]),
+]
+```
+
+**Why `id` is worth setting on production pages:** without it, renaming a page breaks every shared link and bookmark. Setting `id="fin-overview"` keeps `/fin-overview` stable across name changes.
+
+## Shareable URLs
+
+`ConfiguratorPage` working lists are shareable via two URL parameters:
+
+```
+/<page-slug>?b=<base64-json>          # ad-hoc inline working list
+/<page-slug>?preset=<group>/<name>    # deep-link to a saved preset
+/<page-slug>?preset=<name>            # shorthand: equivalent to group=""
+```
+
+Click **Share link** in the configurator sidebar to copy a `?b=...` URL of the current working list to your clipboard. The recipient opens the URL and the configurator hydrates with your cards — but only if their working list is empty. The URL never overwrites in-progress edits. If both `?b` and `?preset` are present, `?b` wins.
+
+`?preset=` deep-links resolve through the same `PresetStore` that powers the sidebar Load button, so a colleague needs the named preset to exist *and* be visible to them. Missing presets and presets in invisible groups both silently no-op — never "preset exists but you can't see it" (avoids leaking presence via URL probing).
+
+`?b` URLs grow with the working list and can hit browser URL limits (~2000 chars triggers a "consider a preset" hint). For larger or longer-lived shares, save a preset and share `?preset=<group>/<name>` instead.
+
+These URL params are ignored on `TeamPage` and `UserPage`.
+
 ## User-defined pages (preset layouts)
 
 Compose static layouts as an explicit row grid. Useful for saved presets or "official" management views:

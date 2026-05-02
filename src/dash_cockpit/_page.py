@@ -21,6 +21,10 @@ class TeamPage:
         Cards rendered in declaration order, wrapping at ``columns``. IDs
         must resolve via the registry; unknown IDs render a yellow warning
         tile rather than breaking the page.
+    id : str, optional
+        Stable URL slug for this page. When empty, the cockpit derives one
+        from ``name``. Set explicitly to keep bookmarks working when ``name``
+        changes. By default ``""``.
     team : str
         Owning team's machine name. Informational; not used for rendering.
         By default ``""``.
@@ -42,6 +46,7 @@ class TeamPage:
 
     name: str
     card_ids: list[str]
+    id: str = ""
     team: str = ""
     columns: int = 2
     grid_columns: int = 0
@@ -62,6 +67,9 @@ class UserPage:
     layout : list[list[str]]
         Rows of card IDs. ``[["a", "b"], ["c"]]`` renders ``a`` and ``b``
         side-by-side on row 1, ``c`` full-width on row 2.
+    id : str, optional
+        Stable URL slug for this page. When empty, the cockpit derives one
+        from ``name``. By default ``""``.
 
     Examples
     --------
@@ -73,6 +81,7 @@ class UserPage:
 
     name: str
     layout: list[list[str]]
+    id: str = ""
 
 
 @dataclass
@@ -95,6 +104,9 @@ class ConfiguratorPage:
         "always-on" KPIs alongside user-built ones. By default ``[]``.
     columns : int
         Grid width for the working list. By default ``2``.
+    id : str, optional
+        Stable URL slug for this page. When empty, the cockpit derives one
+        from ``name``. By default ``""``.
 
     Examples
     --------
@@ -109,6 +121,7 @@ class ConfiguratorPage:
     template_ids: list[str]
     initial_card_ids: list[str] = field(default_factory=list)
     columns: int = 2
+    id: str = ""
 
 
 Page = TeamPage | UserPage | ConfiguratorPage

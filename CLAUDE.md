@@ -92,6 +92,12 @@ Pages are N-column widget grids:
   - **Loading spinner**: every card body wraps in `dcc.Loading` so slow re-renders show a spinner instead of looking frozen.
   - **`card-no-drag` class**: exposed as `CARD_NO_DRAG_CLASS` constant for card authors to opt interactive children out of drag-start. Standard HTML interactives (input/button/select/textarea/a) are excluded automatically.
   - **Configurable resize handles**: `pack_grid(resize_handles=[...])` lets users resize from any edge. Defaults to dash-snap-grid's `["se"]`.
+- **Phase 3.6 — Slug-based page routing:** ✅ shipped (M1.5 sub-task A).
+  - Each page is addressable at `/<slug>`. Slug = `page.id` if set, else `slugify(page.name)` (lowercased, non-alnum → `-`).
+  - All three page dataclasses (`TeamPage`, `UserPage`, `ConfiguratorPage`) gained an optional `id: str = ""` field.
+  - `CockpitApp.__init__` builds `_pages_by_slug`; **duplicate slugs raise `ValueError`** at construction (governance over silent overwrite, matches the registry's startup-time validation pattern).
+  - Empty slugs (e.g. page name was all punctuation) raise `ValueError` — the author must set `page.id` explicitly.
+  - Replaces the previous int-index routing (`/0`, `/1`). `/` and unknown slugs both resolve to the first page (preserves the previous default behaviour for the root path).
 - **Phase 4 — Preset library (Bibliothek):** ✅ shipped (v2 — generic group model).
   - `Preset` dataclass: `name`, `group: str` (opaque namespace), `entries`, optional `layout`, `description`, `metadata`. JSON-round-trippable. `(group, name)` is the composite key.
   - `PresetStore` protocol with `list_presets` / `save(preset)` / `load(group, name)` / `delete(group, name)`. Storage-agnostic — the cockpit never touches storage directly. Implementations are responsible for group-based access control (visibility, write permission); calls that violate permission raise `PermissionError`.
@@ -105,6 +111,13 @@ Pages are N-column widget grids:
   - Save callback writes to `default_save_group_provider()`; overwrites by `(group, name)`.
   - Layout snapshotting in presets is **not yet wired** (the `layout` field exists on `Preset` but the save callback only stores `entries`). Follow-up.
   - Delete UI is **not yet wired** (only the storage protocol supports it). Follow-up.
+- **Phase 4.5 — URL routing & shareable views (M1.5):** ✅ shipped.
+  - New module `_share.py` defines the bundle wire format: `list[{"template_id": str, "params": dict}]` — same shape as `WORKING_LIST_STORE_ID.data` and `Preset.entries`. No new dataclass.
+  - `encode_bundle` / `decode_bundle` round-trip a working list through urlsafe-base64-no-padding JSON. `sort_keys=True` for deterministic tokens.
+  - `resolve_from_search(search, preset_loader)` dispatches `?b=<base64>` (inline ad-hoc) and `?preset=<group>/<name>` (deep-link via the existing `PresetStore`). Bare `?preset=<name>` is shorthand for `group=""`. `?b` wins when both present; malformed `?b` falls through to `?preset` for graceful degradation.
+  - URL hydration callback in `_configurator.py` seeds `WORKING_LIST_STORE_ID` from the URL on first render only — once the user has cards, the URL is ignored. `KeyError` and `PermissionError` from the preset loader are both swallowed silently to avoid leaking presence-vs-permission via URL probing.
+  - Share button (configurator sidebar) builds a `?b=...` URL clientside (canonical-key JSON, urlsafe base64, no padding) and copies it to clipboard. Long-URL warning above ~2000 chars suggests a preset instead.
+  - Status messages target `STATUS_ID` (always present) rather than `PRESET_STATUS_ID`, so URL hydration and Share work in deployments without a configured preset store.
 - **Phase 5 (next, optional):** `Card.render_settings()` for runtime per-card settings (cardcanvas-style settings drawer — see RESEARCH_NOTES Tier 2.1), drag-from-palette flow, layout snapshotting in presets, preset delete UI.
 
 ## Known limitations / honest caveats

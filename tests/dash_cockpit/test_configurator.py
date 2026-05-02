@@ -115,6 +115,17 @@ def test_render_configurator_includes_store_and_picker():
     assert CARDS_PANE_ID in s
 
 
+def test_render_configurator_includes_share_button():
+    from dash_cockpit._configurator import SHARE_BTN_ID
+
+    reg = _make_registry(_KpiTemplate())
+    page = ConfiguratorPage(name="Configurator", template_ids=["kpi"])
+    rendered = render_configurator(page, reg)
+    s = str(rendered)
+    assert SHARE_BTN_ID in s
+    assert "Share link" in s
+
+
 def test_render_configurator_unknown_templates_warning():
     reg = CardRegistry()
     page = ConfiguratorPage(name="Empty", template_ids=["does_not_exist"])

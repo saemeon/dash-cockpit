@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import dash
@@ -37,11 +38,31 @@ _COCKPIT_CSS = f"""
 """
 
 
-def _nav_link(page: Page, index: int) -> dbc.NavLink:
-    """Build one sidebar nav link pointing at ``/<index>``."""
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(name: str) -> str:
+    """Lowercase ``name``, collapse non-alnum runs to ``-``, strip edges."""
+    return _SLUG_RE.sub("-", name.lower()).strip("-")
+
+
+def _page_slug(page: Page) -> str:
+    """Stable URL slug for a page — explicit ``id`` if set, else slugified name."""
+    if page.id:
+        return page.id
+    slug = _slugify(page.name)
+    if not slug:
+        raise ValueError(
+            f"Page name {page.name!r} produced an empty slug; set page.id explicitly."
+        )
+    return slug
+
+
+def _nav_link(page: Page, slug: str) -> dbc.NavLink:
+    """Build one sidebar nav link pointing at ``/<slug>``."""
     return dbc.NavLink(
         page.name,
-        href=f"/{index}",
+        href=f"/{slug}",
         active="exact",
     )
 
@@ -90,7 +111,10 @@ class CockpitApp:
         Pre-populated registry of cards and templates.
     pages : list[Page]
         Pages shown in the sidebar in declaration order. Each page is
-        addressable at ``/<index>``; the first is the default.
+        addressable at ``/<slug>`` — the slug is ``page.id`` if set, else
+        derived from ``page.name`` (lowercased, non-alphanumerics → ``-``).
+        Duplicate slugs raise :class:`ValueError` at construction. The first
+        page is the default for ``/`` and unrecognised slugs.
     title : str, optional
         Browser tab title and sidebar header. By default ``"Cockpit"``.
     theme : str, optional
@@ -143,6 +167,18 @@ class CockpitApp:
         self._title = title
         self._export_backends: dict[str, ExportBackend] = dict(export_backends or {})
         self._preset_store = preset_store
+        self._pages_by_slug: dict[str, Page] = {}
+        self._slugs: list[str] = []
+        for page in pages:
+            slug = _page_slug(page)
+            if slug in self._pages_by_slug:
+                other = self._pages_by_slug[slug].name
+                raise ValueError(
+                    f"Duplicate page slug {slug!r} (from pages {other!r} "
+                    f"and {page.name!r}); set page.id explicitly to disambiguate."
+                )
+            self._pages_by_slug[slug] = page
+            self._slugs.append(slug)
         self._app = dash.Dash(
             __name__,
             external_stylesheets=[theme],
@@ -167,7 +203,10 @@ class CockpitApp:
             )
 
     def _build_sidebar(self) -> html.Div:
-        nav_items = [_nav_link(p, i) for i, p in enumerate(self._pages)]
+        nav_items = [
+            _nav_link(p, s)
+            for p, s in zip(self._pages, self._slugs, strict=True)
+        ]
         children: list[Any] = [
             html.H4(self._title, className="p-3 mb-2"),
             dbc.Nav(nav_items, vertical=True, pills=True, className="px-2"),
@@ -269,14 +308,14 @@ class CockpitApp:
         return html.Div(children, style={"display": "flex", "minHeight": "100vh"})
 
     def _resolve_page(self, pathname: str | None) -> Page | None:
+        """Look up a page by URL slug; fall back to the first page on miss."""
         if not self._pages:
             return None
-        try:
-            idx = int((pathname or "/0").lstrip("/"))
-        except (ValueError, IndexError):
-            idx = 0
-        idx = max(0, min(idx, len(self._pages) - 1))
-        return self._pages[idx]
+        slug = (pathname or "").lstrip("/")
+        page = self._pages_by_slug.get(slug)
+        if page is not None:
+            return page
+        return self._pages[0]
 
     def _register_callbacks(self) -> None:
         @self._app.callback(

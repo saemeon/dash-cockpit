@@ -46,6 +46,7 @@ TEMPLATE_PICKER_ID = "_cockpit_cfg_template"
 FORM_ID = "_cockpit_cfg_form"
 ADD_BTN_ID = "_cockpit_cfg_add"
 CLEAR_BTN_ID = "_cockpit_cfg_clear"
+SHARE_BTN_ID = "_cockpit_cfg_share"
 WORKING_LIST_STORE_ID = "_cockpit_cfg_store"
 CARDS_PANE_ID = "_cockpit_cfg_cards"
 STATUS_ID = "_cockpit_cfg_status"
@@ -385,7 +386,14 @@ def render_configurator(
                 [
                     dbc.Button("Add", id=ADD_BTN_ID, color="primary", className="me-2"),
                     dbc.Button(
-                        "Clear", id=CLEAR_BTN_ID, color="secondary", outline=True
+                        "Clear",
+                        id=CLEAR_BTN_ID,
+                        color="secondary",
+                        outline=True,
+                        className="me-2",
+                    ),
+                    dbc.Button(
+                        "Share link", id=SHARE_BTN_ID, color="secondary", outline=True
                     ),
                 ],
                 className="mt-3",
@@ -576,6 +584,70 @@ def register_configurator_callbacks(
     def _render_pane(working):
         cards = instantiate_working_list(working or [], registry)
         return render_working_list(cards, columns=2)
+
+    # URL hydration — seed the working list from ?b=<base64> or
+    # ?preset=<group>/<name> on first load. Empty-only seeding: if the user
+    # already has cards (e.g. from session storage), the URL is ignored to
+    # avoid trampling edits.
+    from dash_cockpit._share import resolve_from_search
+
+    def _load_preset_entries(group: str, name: str) -> list[dict] | None:
+        if preset_store is None:
+            return None
+        try:
+            return preset_store.load(group, name).entries
+        except (KeyError, PermissionError):
+            return None
+
+    @app.callback(
+        Output(WORKING_LIST_STORE_ID, "data", allow_duplicate=True),
+        Output(STATUS_ID, "children", allow_duplicate=True),
+        Input("_cockpit_url", "search"),
+        State(WORKING_LIST_STORE_ID, "data"),
+        prevent_initial_call="initial_duplicate",
+    )
+    def _hydrate_from_url(search, current):
+        if current:
+            return no_update, no_update
+        bundle = resolve_from_search(search or "", _load_preset_entries)
+        if bundle is None:
+            return no_update, no_update
+        return bundle, f"Loaded {len(bundle)} card(s) from URL."
+
+    # Share button — clientside encode of the working list into a
+    # ?b=<base64> URL, copied to clipboard. Byte-equivalent to
+    # dash_cockpit._share.encode_bundle (sorted keys, no whitespace,
+    # urlsafe alphabet, no padding) so decode_bundle round-trips.
+    app.clientside_callback(
+        """
+        function(n_clicks, working) {
+            if (!n_clicks) return window.dash_clientside.no_update;
+            function canonical(value) {
+                if (value === null || typeof value !== 'object') return value;
+                if (Array.isArray(value)) return value.map(canonical);
+                const out = {};
+                Object.keys(value).sort().forEach(k => { out[k] = canonical(value[k]); });
+                return out;
+            }
+            const json = JSON.stringify(canonical(working || []));
+            const utf8 = unescape(encodeURIComponent(json));
+            const b64 = btoa(utf8)
+                .replace(/\\+/g, '-')
+                .replace(/\\//g, '_')
+                .replace(/=+$/, '');
+            const url = location.origin + location.pathname + '?b=' + b64;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url);
+            }
+            const note = b64.length > 2000 ? ' (long URL — consider a preset)' : '';
+            return 'Copied share link' + note + '.';
+        }
+        """,
+        Output(STATUS_ID, "children", allow_duplicate=True),
+        Input(SHARE_BTN_ID, "n_clicks"),
+        State(WORKING_LIST_STORE_ID, "data"),
+        prevent_initial_call=True,
+    )
 
     if preset_store is not None:
         from dash_cockpit._presets import register_preset_callbacks

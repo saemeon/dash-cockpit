@@ -48,7 +48,7 @@ A user assembles a working list in the configurator and wants to share or reload
 
 **Deferred:** layout snapshotting in presets (`Preset.layout` exists but the save callback only stores `entries`); delete UI (protocol supports it, no button yet). Picked up in Phase 5 / M3+.
 
-### M1.5 — URL routing & shareable views
+### M1.5 — URL routing & shareable views — ✅ shipped
 
 Today the URL contributes nothing to cockpit state. Pages are addressed by integer index (`/0`, `/1`, …), and there is no way to share or deep-link a configurator working list. Two related gaps:
 
@@ -75,7 +75,7 @@ This milestone fixes both with one minimal addition: id-based page routing + a `
 
 `?b` and `?preset` only have meaning on a `ConfiguratorPage`; on other page types they are ignored silently. If both are present, `?b` wins (ad-hoc payload is more specific than a name reference). The `?preset` value is parsed by splitting on the **first** `/` only — preset names containing further `/` characters are preserved literally in the `name` part.
 
-#### Sub-task A — Page id-based routing
+#### Sub-task A — Page id-based routing — ✅ shipped
 
 **Files touched:** [_page.py](dash-cockpit/src/dash_cockpit/_page.py), [_app.py](dash-cockpit/src/dash_cockpit/_app.py).
 
@@ -93,7 +93,7 @@ This milestone fixes both with one minimal addition: id-based page routing + a `
 - Building `CockpitApp` with two pages whose names slugify identically raises `ValueError`.
 - A page with explicit `id="custom-slug"` is reachable at `/custom-slug` even if its `name` would slugify differently.
 
-#### Sub-task B — Share codec module
+#### Sub-task B — Share codec module — ✅ shipped
 
 **New file:** `src/dash_cockpit/_share.py`. Pure functions, only stdlib + the existing `Preset` import.
 
@@ -158,19 +158,19 @@ Notes on the codec:
 - `resolve_from_search("?preset=foo", None)` returns `None` (no store wired).
 - `resolve_from_search("", loader)` returns `None`.
 
-#### Sub-task C — URL hydration callback
+#### Sub-task C — URL hydration callback — ✅ shipped
 
 **Files touched:** [_configurator.py](dash-cockpit/src/dash_cockpit/_configurator.py) only. **No change to [_app.py](dash-cockpit/src/dash_cockpit/_app.py).** M1 already passes `preset_store: PresetStore | None` into `register_configurator_callbacks`; we reuse it.
 
 Inside `register_configurator_callbacks`, build the loader closure inline next to the existing callback registrations and register one additional callback alongside the three already there:
 
 ```python
-def _load_preset_entries(name: str) -> list[dict] | None:
+def _load_preset_entries(group: str, name: str) -> list[dict] | None:
     if preset_store is None:
         return None
     try:
-        return preset_store.load(name).entries
-    except KeyError:
+        return preset_store.load(group, name).entries
+    except (KeyError, PermissionError):
         return None
 
 @app.callback(
@@ -189,13 +189,15 @@ def _hydrate_from_url(search, current):
     return bundle, f"Loaded {len(bundle)} card(s) from URL."
 ```
 
+`PermissionError` is caught alongside `KeyError`: `PresetStore` implementations raise it when the loader's caller is not allowed to see the requested group (e.g. another user's `user:bob` namespace). Treating both as "preset not available" keeps the URL hydrator silent — leaking presence-vs-permission would be an information disclosure surface.
+
 **Critical semantics — only seed an empty working list.** Once the user has edited (length > 0), navigating back to the same URL is a no-op. This matches "URL = initial state, not live binding." The `dcc.Store(storage_type="session")` keeps the edited working list across in-tab navigation.
 
 **`allow_duplicate=True`** is required because the working-list store now has *three* writers: `_mutate_working` ([_configurator.py](dash-cockpit/src/dash_cockpit/_configurator.py)), `_load_preset` ([_presets.py:550](dash-cockpit/src/dash_cockpit/_presets.py#L550)), and our new `_hydrate_from_url`. The first two already use `allow_duplicate=True`; the third must too. `prevent_initial_call="initial_duplicate"` lets the callback fire on first render so a fresh `/configurator?b=...` visit hydrates immediately.
 
 **Status output target — `STATUS_ID`, not `PRESET_STATUS_ID`.** The cockpit now has two status fields: the always-present configurator status (`STATUS_ID` at [_configurator.py:51](dash-cockpit/src/dash_cockpit/_configurator.py#L51)) and the preset-section status (`PRESET_STATUS_ID` at [_presets.py:388](dash-cockpit/src/dash_cockpit/_presets.py#L388)) which only renders when `preset_store is not None`. Routing URL-hydration messages to `STATUS_ID` keeps `?b=…` deep-links functional in deployments without a preset store.
 
-#### Sub-task D — Share button (configurator sidebar)
+#### Sub-task D — Share button (configurator sidebar) — ✅ shipped
 
 **File touched:** [_configurator.py](dash-cockpit/src/dash_cockpit/_configurator.py).
 
@@ -216,7 +218,7 @@ function (n_clicks, working) {
 
 Server-side `encode_bundle` stays the source of truth (used by tests and any future export feature); the clientside variant must be byte-equivalent for round-trip with `decode_bundle`. Add a round-trip test in Python that asserts the JS-style encoding (sorted keys, no padding, urlsafe alphabet) decodes correctly via `decode_bundle`.
 
-#### Sub-task E — Documentation
+#### Sub-task E — Documentation — ✅ shipped
 
 - Update [CLAUDE.md](dash-cockpit/CLAUDE.md) "Implementation status" — add a Phase 4.5 entry mirroring this milestone.
 - Add a "URL schema" section to [README.md](dash-cockpit/README.md) showing the three URL forms and a `CockpitApp(preset_store=...)` example demonstrating that `?preset=` deep-links resolve through the same store as the sidebar Load button.
@@ -225,7 +227,7 @@ Server-side `encode_bundle` stays the source of truth (used by tests and any fut
 #### Edge cases & explicit non-goals
 
 - **`?b=` bundle references a template not in this registry.** The existing `instantiate_working_list` path renders an error tile per missing template. Acceptable — matches the per-card failure model.
-- **`?preset=` references a preset not in this store.** Hydrator returns `None`, working list stays empty, no status message. Don't surface a scary error — a missing preset is functionally identical to "no URL bundle at all".
+- **`?preset=` references a preset not in this store, or in a group the viewer cannot see.** Hydrator returns `None`, working list stays empty, no status message. `KeyError` (not found) and `PermissionError` (not visible to this user) are both treated the same — never surface "this preset exists but you can't see it" to URL viewers. A missing or hidden preset is functionally identical to "no URL bundle at all".
 - **User opens a `?b=...` URL while already having an edited working list.** Hydrator skips (empty-only seeding). The existing URL is "consumed" only on a fresh tab/session. This is intentional; loud-overwrite UX would need a confirmation modal which is out of scope.
 - **Layout snapshot in URL:** explicitly out of scope. Layouts stay in localStorage. Adding layout to bundles is M1 follow-up work (preset layout snapshotting), not this milestone.
 - **Writing the URL back from edits:** explicitly out of scope. Share is an explicit button, not an implicit behaviour. Avoids spamming history and conflicting with localStorage layout state.
@@ -235,14 +237,13 @@ Server-side `encode_bundle` stays the source of truth (used by tests and any fut
 
 1. **`_share.py` + tests.** Pure module, no Dash, isolated. Land first — derisks the codec.
 2. **Page slug migration** ([_page.py](dash-cockpit/src/dash_cockpit/_page.py), [_app.py](dash-cockpit/src/dash_cockpit/_app.py)) + tests. Independent of bundles. Ships a small but visible UX improvement on its own.
-3. **Wire `preset_loader`** through `CockpitApp` → `register_configurator_callbacks`. Plumbing only, no behaviour change yet.
-4. **Add the URL hydration callback** in `_configurator.py`. End-to-end working with `?b=...` and `?preset=...`.
-5. **Share button** + clientside encode. Closes the user-facing loop.
-6. **Docs.**
+3. **URL hydration callback** added inside `register_configurator_callbacks` ([_configurator.py](dash-cockpit/src/dash_cockpit/_configurator.py)). Reuses the `preset_store` parameter M1 already plumbs through; no `_app.py` change needed. End-to-end working with `?b=...` and `?preset=...`.
+4. **Share button** + clientside encode. Closes the user-facing loop.
+5. **Docs.**
 
 Each step lands with passing tests before moving to the next. Steps 1–2 can be PR'd independently.
 
-**Scope:** ~120–180 lines new code + tests, one new module (`_share.py`), no breaking changes to public API (page `id` is additive, `preset_store` already exists). Page slug migration changes the URL surface — bookmarks under `/0`, `/1` stop working. Worth calling out in release notes; mitigated by URL-miss falling back to first page rather than 404.
+**Scope:** ~100–160 lines new code + tests, one new module (`_share.py`), no breaking changes to public API (page `id` is additive, `preset_store` already plumbed end-to-end). Page slug migration changes the URL surface — bookmarks under `/0`, `/1` stop working. Worth calling out in release notes; mitigated by URL-miss falling back to first page rather than 404.
 
 ### M2 — Per-card refresh
 
@@ -445,7 +446,7 @@ class CockpitConfig:
 | **Pluggable export** | ✅ | Implement `ExportBackend.export`. |
 | **Pluggable storage (presets)** | ✅ | M1 (`PresetStore` + 2 implementations) |
 | **Pluggable auth** | ⏳ | M6 |
-| **Shareable URLs (deep links)** | ⏳ | M1.5 |
+| **Shareable URLs (deep links)** | ✅ | M1.5 (`?b=`, `?preset=<group>/<name>`, slug routing) |
 | **Robust to bad cards** | ✅ | Error boundary, isolation by design. |
 | **Robust to slow cards** | ❌ | Render timeout — pin down #6 |
 | **Robust to bad team packages** | ⏳ | Startup try/except — pin down #7 |
