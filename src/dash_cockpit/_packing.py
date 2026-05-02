@@ -34,11 +34,42 @@ pixels), and ``size=(2, 2)`` is two rows tall.
 """
 
 
+CARD_NO_DRAG_CLASS = "card-no-drag"
+"""CSS class card authors put on interactive elements to opt them out of drag-start.
+
+Buttons, inputs, dropdowns inside cards normally trigger drag when clicked
+because the whole tile is draggable. Add ``className="card-no-drag"`` to
+any element that should respond to clicks instead.
+"""
+
+
+# CSS selector passed to Grid.draggableCancel — matches the standard
+# interactive HTML elements plus the opt-in class above.
+DRAGGABLE_CANCEL_SELECTOR = (
+    f"input,select,textarea,button,a,.{CARD_NO_DRAG_CLASS}"
+)
+
+
 GRID_ID_TYPE = "_cockpit_grid"
 """``type`` field of every :class:`Grid`'s pattern-matching id."""
 
 LAYOUT_STORE_ID_TYPE = "_cockpit_layout_store"
 """``type`` field of every layout-persistence :class:`dcc.Store`'s pattern-matching id."""
+
+EDIT_MODE_STORE_ID = "_cockpit_edit_mode_store"
+"""ID of the single app-level :class:`dcc.Store` holding edit-mode state."""
+
+EDIT_MODE_TOGGLE_ID = "_cockpit_edit_mode_toggle"
+"""ID of the sidebar toggle that flips edit mode on/off."""
+
+PAGE_CONTENT_ID = "_cockpit_page_content"
+"""ID of the page-content wrapper used as the edit-mode className target."""
+
+EDIT_MODE_CLASS = "cockpit-edit-mode"
+"""CSS class applied to the page-content wrapper when edit mode is on."""
+
+CARD_MENU_CLASS = "cockpit-card-menu"
+"""CSS class on per-card ⋮ menu wrappers — hidden in CSS when not in edit mode."""
 
 
 def grid_id(key: str) -> dict[str, str]:
@@ -130,8 +161,9 @@ def pack_grid(
     persist_key: str = "default",
     row_height: int = DEFAULT_ROW_HEIGHT,
     sizes: list[tuple[int, int]] | None = None,
-    draggable: bool = True,
-    resizable: bool = True,
+    draggable: bool = False,
+    resizable: bool = False,
+    resize_handles: list[str] | None = None,
 ) -> Component:
     """Pack a flat list of components into a draggable/resizable grid.
 
@@ -163,9 +195,17 @@ def pack_grid(
         every card. Read from each card's ``CARD_META["size"]`` by callers
         in :mod:`_layout` and :mod:`_configurator`. By default ``None``.
     draggable : bool, optional
-        If ``False``, cards are pinned in place. By default ``True``.
+        Initial draggable state. The cockpit's edit-mode toggle overrides
+        this at runtime via :func:`register_edit_mode_callbacks`. By default
+        ``False`` (cards locked until the user enters edit mode).
     resizable : bool, optional
-        If ``False``, cards cannot be resized. By default ``True``.
+        Initial resizable state. Same edit-mode override as ``draggable``.
+        By default ``False``.
+    resize_handles : list[str], optional
+        Which corners/edges show resize handles. Subset of
+        ``["s", "e", "w", "n", "se", "ne", "sw", "nw"]``. ``None`` uses
+        ``dash-snap-grid``'s default of ``["se"]`` (south-east corner only).
+        Pass all eight to allow resizing from any side. By default ``None``.
 
     Returns
     -------
@@ -226,20 +266,22 @@ def pack_grid(
         for c, cid in zip(components, ids, strict=False)
     ]
 
-    grid = Grid(
-        id=grid_id(persist_key),
-        cols=columns,
-        rowHeight=row_height,
-        layout=layout,
-        children=children,
-        isDraggable=draggable,
-        isResizable=resizable,
-        compactType="vertical",
-        margin=[10, 10],
-        containerPadding=[10, 10],
-        # Don't start a drag from inputs/buttons inside cards.
-        draggableCancel="input,select,textarea,button,.card-no-drag",
-    )
+    grid_kwargs: dict[str, object] = {
+        "id": grid_id(persist_key),
+        "cols": columns,
+        "rowHeight": row_height,
+        "layout": layout,
+        "children": children,
+        "isDraggable": draggable,
+        "isResizable": resizable,
+        "compactType": "vertical",
+        "margin": [10, 10],
+        "containerPadding": [10, 10],
+        "draggableCancel": DRAGGABLE_CANCEL_SELECTOR,
+    }
+    if resize_handles is not None:
+        grid_kwargs["resizeHandles"] = list(resize_handles)
+    grid = Grid(**grid_kwargs)
     return html.Div(
         [
             dcc.Store(
@@ -305,4 +347,62 @@ def register_layout_callbacks(app) -> None:
         Input(layout_store_id(MATCH), "modified_timestamp"),
         State(layout_store_id(MATCH), "data"),
         State(grid_id(MATCH), "layout"),
+    )
+
+
+def register_edit_mode_callbacks(app) -> None:
+    """Wire the app-level edit-mode toggle to grid drag/resize and menu visibility.
+
+    When edit mode is **off** (default), every grid is locked
+    (``isDraggable=False``, ``isResizable=False``) and per-card ⋮ menus are
+    hidden via CSS. When **on**, grids are unlocked and menus appear.
+
+    Two clientside callbacks:
+
+    - **Toggle** writes the boolean to the edit-mode :class:`dcc.Store`
+      whenever the toolbar switch is clicked.
+    - **Apply** reads the store and writes ``isDraggable``/``isResizable``
+      to every grid (pattern-matching ALL) plus a CSS class on the
+      page-content wrapper.
+
+    Parameters
+    ----------
+    app : dash.Dash
+        The app to register on. Called once from :class:`CockpitApp`.
+    """
+    from dash import ALL, Input, Output, State
+
+    # Toggle the boolean store on switch click.
+    app.clientside_callback(
+        """
+        function(checked, current) {
+            if (checked === undefined || checked === null) {
+                return window.dash_clientside.no_update;
+            }
+            if (Boolean(checked) === Boolean(current)) {
+                return window.dash_clientside.no_update;
+            }
+            return Boolean(checked);
+        }
+        """,
+        Output(EDIT_MODE_STORE_ID, "data"),
+        Input(EDIT_MODE_TOGGLE_ID, "value"),
+        State(EDIT_MODE_STORE_ID, "data"),
+    )
+
+    # Apply edit-mode state to every grid + the page-content wrapper.
+    app.clientside_callback(
+        f"""
+        function(editMode, gridIds) {{
+            const enabled = Boolean(editMode);
+            const gridStates = (gridIds || []).map(() => enabled);
+            const className = enabled ? '{EDIT_MODE_CLASS}' : '';
+            return [gridStates, gridStates, className];
+        }}
+        """,
+        Output({"type": GRID_ID_TYPE, "key": ALL}, "isDraggable"),
+        Output({"type": GRID_ID_TYPE, "key": ALL}, "isResizable"),
+        Output(PAGE_CONTENT_ID, "className"),
+        Input(EDIT_MODE_STORE_ID, "data"),
+        State({"type": GRID_ID_TYPE, "key": ALL}, "id"),
     )

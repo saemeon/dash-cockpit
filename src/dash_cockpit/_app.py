@@ -15,10 +15,25 @@ from dash_cockpit._configurator import (
 )
 from dash_cockpit._export import ExportBackend, export_page
 from dash_cockpit._layout import render_page
-from dash_cockpit._packing import register_layout_callbacks
+from dash_cockpit._packing import (
+    CARD_MENU_CLASS,
+    EDIT_MODE_CLASS,
+    EDIT_MODE_STORE_ID,
+    EDIT_MODE_TOGGLE_ID,
+    PAGE_CONTENT_ID,
+    register_edit_mode_callbacks,
+    register_layout_callbacks,
+)
 from dash_cockpit._page import ConfiguratorPage, Page
 from dash_cockpit._refresh import register_refresh_callbacks
 from dash_cockpit._registry import CardRegistry
+
+# Inline CSS shipped with every CockpitApp. Hides the per-card ⋮ menus
+# unless the page-content wrapper is in edit mode.
+_COCKPIT_CSS = f"""
+.{CARD_MENU_CLASS} {{ display: none; }}
+.{EDIT_MODE_CLASS} .{CARD_MENU_CLASS} {{ display: block; }}
+"""
 
 
 def _nav_link(page: Page, index: int) -> dbc.NavLink:
@@ -126,9 +141,15 @@ class CockpitApp:
             suppress_callback_exceptions=True,
         )
         self._app.title = title
+        # Inline edit-mode CSS so card menus only appear in edit mode.
+        self._app.index_string = self._app.index_string.replace(
+            "{%css%}",
+            "{%css%}\n        <style>" + _COCKPIT_CSS + "</style>",
+        )
         self._app.layout = self._build_layout()
         self._register_callbacks()
         register_layout_callbacks(self._app)
+        register_edit_mode_callbacks(self._app)
         register_refresh_callbacks(self._app, self._registry)
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(self._app, self._registry)
@@ -138,6 +159,16 @@ class CockpitApp:
         children: list[Any] = [
             html.H4(self._title, className="p-3 mb-2"),
             dbc.Nav(nav_items, vertical=True, pills=True, className="px-2"),
+            # Edit-mode toggle: when off, cards are locked and menus hidden.
+            html.Div(
+                dbc.Switch(
+                    id=EDIT_MODE_TOGGLE_ID,
+                    label="Edit layout",
+                    value=False,
+                    className="mb-0",
+                ),
+                className="px-3 mt-3",
+            ),
         ]
         if self._export_backends:
             children.append(
@@ -206,11 +237,17 @@ class CockpitApp:
     def _build_layout(self) -> html.Div:
         sidebar = self._build_sidebar()
         content = html.Div(
-            id="_cockpit_page_content",
+            id=PAGE_CONTENT_ID,
             style={"flex": "1", "padding": "24px", "overflowY": "auto"},
         )
         children: list[Any] = [
             dcc.Location(id="_cockpit_url"),
+            # Persisted edit-mode state — survives reloads.
+            dcc.Store(
+                id=EDIT_MODE_STORE_ID,
+                storage_type="local",
+                data=False,
+            ),
             sidebar,
             content,
         ]
@@ -231,7 +268,7 @@ class CockpitApp:
 
     def _register_callbacks(self) -> None:
         @self._app.callback(
-            Output("_cockpit_page_content", "children"),
+            Output(PAGE_CONTENT_ID, "children"),
             Input("_cockpit_url", "pathname"),
         )
         def render_content(pathname: str | None):

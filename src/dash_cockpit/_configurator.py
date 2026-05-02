@@ -23,7 +23,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from dash_cockpit._error import error_boundary
-from dash_cockpit._packing import pack_grid
+from dash_cockpit._packing import CARD_MENU_CLASS, pack_grid
 from dash_cockpit._refresh import wrap_for_refresh
 from dash_cockpit._template import (
     ParameterSpec,
@@ -249,6 +249,7 @@ def _render_card_tile(card: Any, context: dict) -> Component:
         [
             html.Div(
                 menu,
+                className=CARD_MENU_CLASS,
                 style={
                     "position": "absolute",
                     "top": "4px",

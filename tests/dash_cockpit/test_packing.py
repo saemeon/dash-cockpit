@@ -6,14 +6,20 @@ from dash import dcc, html
 from dash_snap_grid import Grid
 
 from dash_cockpit._packing import (
+    CARD_NO_DRAG_CLASS,
     DEFAULT_ROW_HEIGHT,
+    DRAGGABLE_CANCEL_SELECTOR,
+    EDIT_MODE_STORE_ID,
+    EDIT_MODE_TOGGLE_ID,
     GRID_ID_TYPE,
     LAYOUT_STORE_ID_TYPE,
+    PAGE_CONTENT_ID,
     col_width,
     grid_id,
     layout_store_id,
     pack_grid,
     pack_row,
+    register_edit_mode_callbacks,
     register_layout_callbacks,
 )
 
@@ -111,6 +117,67 @@ class TestIdHelpers:
 
     def test_layout_store_id_shape(self):
         assert layout_store_id("k") == {"type": LAYOUT_STORE_ID_TYPE, "key": "k"}
+
+
+class TestPackGridDefaults:
+    def test_locked_by_default(self):
+        """Cards start locked — edit mode unlocks via clientside callback."""
+        result = pack_grid([html.Div("a")], ids=["a"], columns=1)
+        grid = next(c for c in result.children if isinstance(c, Grid))
+        assert grid.isDraggable is False
+        assert grid.isResizable is False
+
+    def test_can_unlock_explicitly(self):
+        result = pack_grid(
+            [html.Div("a")],
+            ids=["a"],
+            columns=1,
+            draggable=True,
+            resizable=True,
+        )
+        grid = next(c for c in result.children if isinstance(c, Grid))
+        assert grid.isDraggable is True
+        assert grid.isResizable is True
+
+    def test_resize_handles_default_omitted(self):
+        result = pack_grid([html.Div("a")], ids=["a"], columns=1)
+        grid = next(c for c in result.children if isinstance(c, Grid))
+        # When None is passed, we omit the prop entirely → Grid uses its own default.
+        assert "resizeHandles" not in (grid.to_plotly_json().get("props", {}))
+
+    def test_resize_handles_propagate(self):
+        result = pack_grid(
+            [html.Div("a")],
+            ids=["a"],
+            columns=1,
+            resize_handles=["se", "sw", "ne", "nw"],
+        )
+        grid = next(c for c in result.children if isinstance(c, Grid))
+        assert grid.resizeHandles == ["se", "sw", "ne", "nw"]
+
+    def test_draggable_cancel_includes_no_drag_class(self):
+        result = pack_grid([html.Div("a")], ids=["a"], columns=1)
+        grid = next(c for c in result.children if isinstance(c, Grid))
+        assert CARD_NO_DRAG_CLASS in grid.draggableCancel
+        assert grid.draggableCancel == DRAGGABLE_CANCEL_SELECTOR
+
+
+class TestRegisterEditModeCallbacks:
+    def test_adds_two_callbacks(self):
+        app = dash.Dash(__name__)
+        # Output IDs need to exist in app.layout for Dash to validate, but we
+        # use suppress_callback_exceptions to register them anyway.
+        app.config.suppress_callback_exceptions = True
+        before = len(app.callback_map)
+        register_edit_mode_callbacks(app)
+        # One toggle callback + one apply callback.
+        assert len(app.callback_map) - before == 2
+
+    def test_constants_are_strings(self):
+        # Sanity: constants used for callback wiring must be plain strings.
+        assert isinstance(EDIT_MODE_STORE_ID, str)
+        assert isinstance(EDIT_MODE_TOGGLE_ID, str)
+        assert isinstance(PAGE_CONTENT_ID, str)
 
 
 class TestRegisterLayoutCallbacks:

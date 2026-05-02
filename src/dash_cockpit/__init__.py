@@ -34,6 +34,7 @@ from dash_cockpit._export import (
     classify_card,
     export_page,
 )
+from dash_cockpit._packing import CARD_NO_DRAG_CLASS
 from dash_cockpit._page import ConfiguratorPage, Page, TeamPage, UserPage
 from dash_cockpit._registry import CardRegistry, RegistryError
 from dash_cockpit._template import (
@@ -47,6 +48,7 @@ from dash_cockpit._version import __version__
 
 __all__ = [
     # Cards
+    "CARD_NO_DRAG_CLASS",
     "Card",
     "CardMeta",
     # Templates

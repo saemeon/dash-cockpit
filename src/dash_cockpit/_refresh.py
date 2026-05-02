@@ -85,8 +85,16 @@ def wrap_for_refresh(
         A :class:`html.Div` wrapper. If ``refresh_interval > 0``, includes a
         sibling :class:`dcc.Interval`.
     """
+    # Wrap in dcc.Loading so slow re-renders show a spinner instead of
+    # appearing frozen. The loading overlay is transparent until the
+    # update actually takes time, so there's no visual cost on fast renders.
     body = html.Div(
-        component,
+        dcc.Loading(
+            component,
+            type="default",
+            parent_style={"height": "100%", "width": "100%"},
+            overlay_style={"visibility": "visible"},
+        ),
         id=card_body_id(card_id),
         style={"height": "100%", "width": "100%"},
     )

@@ -55,6 +55,13 @@ class TestWrapForRefresh:
         body = next(c for c in result.children if isinstance(c, html.Div))
         assert body.id == card_body_id("card_a")
 
+    def test_body_wraps_in_dcc_loading(self):
+        """Slow renders should show a spinner instead of looking frozen."""
+        result = wrap_for_refresh(html.Span("hi"), "card_a", 0)
+        # Body Div contains a dcc.Loading containing the original component.
+        loading = result.children
+        assert isinstance(loading, dcc.Loading)
+
 
 class TestRegisterRefreshCallbacks:
     def test_adds_one_callback(self):
