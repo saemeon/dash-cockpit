@@ -45,53 +45,74 @@ Reasons:
 - Its `Card` ABC assumes everything lives in one app; our cards fetch from distributed team backends.
 - Adopting it means bending our architecture to fit its assumptions (single canvas, no pages, no team dispatch).
 
-**Decision: adopt `dash-snap-grid` later, as a layout-layer swap.**
+**Decision: adopted `dash-snap-grid` (the engine CardCanvas uses internally) as the layout layer.**
 
-`dash-snap-grid` (`ResponsiveGrid`) is the drag-drop grid engine CardCanvas uses internally. It is a pure UI primitive with no opinions about cards, data, or team ownership. When we need drag-drop layout:
-- Replace `dbc.Row`/`dbc.Col` packing in `_layout.py` with `ResponsiveGrid`.
-- Store layout as `dcc.Store(storage_type="local")` per page — free persistence.
-- Card's `size` field becomes the default `{w, h}` hint before the user manually drags.
+Single isolated module owns it: `_packing.py` is the only place that knows about Bootstrap row/col or `dash-snap-grid`'s `Grid`. Swapping engines later means rewriting one file.
 
-This is a ~50-line change in `_layout.py`. No other module needs to change. Do this in Phase 3.
+- `pack_grid()` returns `Div([Store, Grid])` with pattern-matching dict ids.
+- `register_layout_callbacks(app)` registers two clientside callbacks (`MATCH` on the grid id) that save to `dcc.Store(storage_type="local")` and restore from it on hydrate.
+- A JSON equality guard in restore breaks the save→restore→save loop.
+- Card's `size` (widget grid units) flows from `CARD_META["size"]` through to the grid's initial layout.
 
 ---
 
-## Future direction: widget sizing
+## Widget sizing — shipped
 
-Pages are currently uniform grids (`columns=N`, every card same width). The next natural extension — and the one the iOS analogy suggests — is **cards declaring a size hint** in widget units:
+Pages are N-column widget grids:
 
-- A page is an N-column grid (e.g. N=4).
-- A card declares `size=(width_units, height_units)` in `CARD_META`, e.g. `(1,1)` small, `(2,1)` medium, `(2,2)` large, `(4,1)` banner.
-- The cockpit lays out cards in declaration order, wrapping to a new row when a card doesn't fit.
-- Default `(1,1)` keeps existing cards working unchanged.
+- Each `TeamPage` and `ConfiguratorPage` declares `columns: int` (default 2).
+- Each `Card` may declare `size=(width_units, height_units)` in `CARD_META`. Default `(1, 1)`.
+- Cards auto-place left-to-right, wrapping at `columns`.
+- Cells fill exactly `row_height × h` pixels (default `row_height=280`). Cards must use `height: 100%` or flex layout — fixed pixel heights will clip or leave whitespace.
 
-Not implemented yet. The hooks to add later: a `size` field on `CardMeta`, a packing function in `_layout.py`, and a `grid_columns` field on `Page`.
-
-## Implementation status (as of writing)
+## Implementation status
 
 - **Phase 1 — Export wiring:** ✅ shipped.
   - Protocols: `TabularCard`, `DocumentCard`, `ChartCard`, `ExportBackend`. All `runtime_checkable`, all opt-in.
   - `export_page(page, registry, backend) -> bytes`; backends consume `PageExportData` (frozen dataclass).
   - `CockpitApp(export_backends={"label": backend})` adds a download button + format-radio modal.
   - Demo: `revenue_trend` is a `TabularCard`; `examples/demo_cockpit/csv_zip_backend.py` exports any `TabularCard` page as a zip of CSVs.
-- **Phase 2 — Configurator:** ✅ shipped (v1).
+- **Phase 2 — Configurator:** ✅ shipped.
   - `CardTemplate` protocol with `TemplateMeta` and `ParameterSpec` (types: `select`, `multi_select`, `number`, `date`, `text`).
+  - `ParameterSpec.options_fn` is wired — cascading dropdowns rerender the form on parameter change while preserving entered values.
   - `card_id_for(template_id, params)` — deterministic, order-insensitive id; idempotent Add.
   - `fanout_params` — multi-select expands cartesian-product into one card per scalar value (kennzahlen pattern).
   - `ConfiguratorPage` is in the `Page` union; `_layout.render_page` dispatches to it.
-  - `_configurator.py` provides server-side rendering + Dash callbacks (template picker → form swap → store mutation → cards-pane re-render). State lives in a session `dcc.Store`.
-  - Per-card actions surface via a `⋮` dropdown menu (top-right of each tile).
+  - `_configurator.py` provides server-side rendering + Dash callbacks (template picker → form swap → store mutation → cards-pane re-render). Working-list state lives in a session `dcc.Store`.
+  - Per-card actions: cards declare `actions: [{"id": ..., "label": ...}]` in `CARD_META` and the cockpit renders them as `⋮` menu items, emitting pattern-matching callback events.
   - Export modal is configurator-aware: when on a `ConfiguratorPage`, it exports the live working list, not the page's static `card_ids`.
-  - Demo: `team_finance/templates/kpi_lookup.py` ships a kennzahlen-style template (year × metric × multi-division).
-- **Phase 3 (later, optional):** saved presets ("Bibliothek"), drag-drop reorder, per-card refresh/context propagation, widget sizing.
+- **Phase 3 — Drag-drop layout + widget sizing:** ✅ shipped.
+  - `dash-snap-grid` is the layout engine for `TeamPage` and `ConfiguratorPage` working lists.
+  - Drag/resize at runtime; layout persists per-browser via `dcc.Store(storage_type="local")`.
+  - `CardMeta.size` initial hints flow through `pack_grid(sizes=...)`.
+  - `UserPage` deliberately remains on Bootstrap rows (no drag-drop) — its 2D `layout` is the source of truth.
+- **Phase 3.5 — Polish (Tier 1 from RESEARCH_NOTES):** ✅ shipped.
+  - **Edit mode toggle**: sidebar switch flips draggable/resizable across all grids; ⋮ menus hidden via CSS unless edit mode is on. State persisted in localStorage. Cards locked by default — protects against accidental reshuffle.
+  - **Per-card refresh**: cards declare `refresh_interval` seconds; one pattern-matching server callback re-renders each card on its own `dcc.Interval` tick. `0` disables (default).
+  - **Loading spinner**: every card body wraps in `dcc.Loading` so slow re-renders show a spinner instead of looking frozen.
+  - **`card-no-drag` class**: exposed as `CARD_NO_DRAG_CLASS` constant for card authors to opt interactive children out of drag-start. Standard HTML interactives (input/button/select/textarea/a) are excluded automatically.
+  - **Configurable resize handles**: `pack_grid(resize_handles=[...])` lets users resize from any edge. Defaults to dash-snap-grid's `["se"]`.
+- **Phase 4 — Preset library (Bibliothek):** ✅ shipped (v2 — generic group model).
+  - `Preset` dataclass: `name`, `group: str` (opaque namespace), `entries`, optional `layout`, `description`, `metadata`. JSON-round-trippable. `(group, name)` is the composite key.
+  - `PresetStore` protocol with `list_presets` / `save(preset)` / `load(group, name)` / `delete(group, name)`. Storage-agnostic — the cockpit never touches storage directly. Implementations are responsible for group-based access control (visibility, write permission); calls that violate permission raise `PermissionError`.
+  - **Generic group model.** The framework prescribes no taxonomy. Deployments invent their own group strings (`"global"`, `"team:finance"`, `"user:alice"`, `"region:apac"`, …). Per-user scoping is just one convention.
+  - Two implementations: `InMemoryPresetStore` (no group filtering, for tests/demos), `LocalFilePresetStore` (one JSON file per preset under `<dir>/<sanitised-group>/<sanitised-name>.json`, atomic writes).
+  - **Three optional providers on `LocalFilePresetStore`:** `visible_groups_provider`, `writable_groups_provider`, `default_save_group_provider`. All callables, invoked per-op so they can read request-scoped state.
+  - **Env-var defaults.** When providers are omitted, the store reads `$COCKPIT_USER` (configurable via `user_env_var`) and assembles sensible defaults: visible = `["global", f"user:{u}"]`, writable = `[f"user:{u}"]`, save target = `f"user:{u}"`. With no env user: visible = `["global"]`, writable = `[]` (no saves possible).
+  - **Seed presets** (in-memory, layered on top of disk) replace the old `curated=` arg. Filtered by visibility same as disk presets. Saving/deleting a seeded `(group, name)` raises `PermissionError`.
+  - Group sanitisation prevents path-traversal (`"../../../etc"` becomes `"_______etc"`).
+  - `CockpitApp(preset_store=...)` enables a preset section in every `ConfiguratorPage` sidebar (picker labels = `"group / name"`, Load button, Save modal showing the destination group).
+  - Save callback writes to `default_save_group_provider()`; overwrites by `(group, name)`.
+  - Layout snapshotting in presets is **not yet wired** (the `layout` field exists on `Preset` but the save callback only stores `entries`). Follow-up.
+  - Delete UI is **not yet wired** (only the storage protocol supports it). Follow-up.
+- **Phase 5 (next, optional):** `Card.render_settings()` for runtime per-card settings (cardcanvas-style settings drawer — see RESEARCH_NOTES Tier 2.1), drag-from-palette flow, layout snapshotting in presets, preset delete UI.
 
 ## Known limitations / honest caveats
 
-- **`ParameterSpec.options_fn` is accepted but ignored.** Cascading dropdowns are documented as a feature on the dataclass but not yet wired through `_field_component`. Either implement or remove.
-- **The form is bespoke, not dash-fn-form.** Originally planned to use `dash-fn-form` (already in the workspace) for parameter rendering; v1 uses dbc/dcc directly. Revisit before scope grows.
-- **Configurator callbacks are not test-covered.** Pure helpers are; the live pattern-matching callback bodies require a running Dash app and have only been smoke-tested.
-- **No export-format validation.** Backend that sees a page with no compatible cards is responsible for handling it (the demo writes a `README.txt`). A more opinionated cockpit would gray out incompatible formats in the modal.
-- **Cards can't yet declare a size.** Layout is uniform-grid only.
+- **The configurator form is bespoke, not dash-fn-form.** Originally planned to use `dash-fn-form` (already in the workspace) for parameter rendering; v1 uses dbc/dcc directly. Revisit before scope grows.
+- **Live callbacks are not unit-test covered.** Pure helpers and the rendered component tree are covered; configurator and layout-persistence callbacks need a running Dash app to exercise. A Selenium/integration smoke test is the next step.
+- **No export-format validation.** A backend handed a page with no compatible cards is responsible for handling it (the demo writes a `README.txt`). A more opinionated cockpit would gray out incompatible formats in the modal.
+- **`refresh_interval` is documented but not yet wired.** Cards declare it in `CARD_META` but the cockpit does not auto-refresh.
 
 ---
 

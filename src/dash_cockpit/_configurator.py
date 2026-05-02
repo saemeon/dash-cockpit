@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from dash.development.base_component import Component
 
     from dash_cockpit._page import ConfiguratorPage
+    from dash_cockpit._presets import PresetStore
     from dash_cockpit._registry import CardRegistry
     from dash_cockpit._template import CardTemplate
 
@@ -310,12 +311,16 @@ def _card_size_from_meta(meta: dict) -> tuple[int, int]:
     return (max(1, int(w)), max(1, int(h)))
 
 
-def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Component:
+def render_configurator(
+    page: ConfiguratorPage,
+    registry: CardRegistry,
+    preset_store: PresetStore | None = None,
+) -> Component:
     """Build the initial layout for a :class:`ConfiguratorPage`.
 
     Renders the static skeleton — sidebar (template picker, parameter form,
-    Add/Clear buttons), empty cards pane, and the working-list
-    :class:`dcc.Store`. Callbacks registered by
+    Add/Clear buttons, optional preset section), empty cards pane, and the
+    working-list :class:`dcc.Store`. Callbacks registered by
     :func:`register_configurator_callbacks` fill in the rest.
 
     Parameters
@@ -324,6 +329,9 @@ def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Compo
         The page being rendered.
     registry : CardRegistry
         Registry used to resolve ``page.template_ids``.
+    preset_store : PresetStore, optional
+        If provided, a preset picker + Load/Save buttons are added to the
+        sidebar above the template picker. By default ``None`` (no preset UI).
 
     Returns
     -------
@@ -351,7 +359,18 @@ def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Compo
     ]
     initial_template = available_templates[0]
 
-    sidebar = html.Div(
+    sidebar_children: list[Any] = []
+    if preset_store is not None:
+        from dash_cockpit._presets import _resolve_save_target, render_preset_section
+
+        sidebar_children.append(
+            render_preset_section(
+                preset_store.list_presets(),
+                save_target=_resolve_save_target(preset_store),
+            )
+        )
+        sidebar_children.append(html.Hr())
+    sidebar_children.extend(
         [
             html.H6("Template", className="mb-2"),
             dcc.Dropdown(
@@ -372,7 +391,10 @@ def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Compo
                 className="mt-3",
             ),
             html.Div(id=STATUS_ID, className="text-muted small mt-2"),
-        ],
+        ]
+    )
+    sidebar = html.Div(
+        sidebar_children,
         style={
             "width": "320px",
             "padding": "16px",
@@ -399,10 +421,14 @@ def render_configurator(page: ConfiguratorPage, registry: CardRegistry) -> Compo
     )
 
 
-def register_configurator_callbacks(app: dash.Dash, registry: CardRegistry) -> None:
+def register_configurator_callbacks(
+    app: dash.Dash,
+    registry: CardRegistry,
+    preset_store: PresetStore | None = None,
+) -> None:
     """Wire all callbacks needed by :class:`ConfiguratorPage` rendering.
 
-    Three callbacks are registered:
+    Three callbacks are always registered:
 
     - **Form swap / refresh** — re-renders the parameter form on template
       change or when ``options_fn`` callbacks need fresh options after
@@ -411,6 +437,10 @@ def register_configurator_callbacks(app: dash.Dash, registry: CardRegistry) -> N
       :class:`dcc.Store`.
     - **Render cards pane** — re-renders the working list whenever the
       store updates.
+
+    If ``preset_store`` is given, three additional callbacks are wired
+    via :func:`~dash_cockpit._presets.register_preset_callbacks`: Load,
+    Save modal toggle, and Save confirm.
 
     Caller is responsible for deciding when to invoke; :class:`CockpitApp`
     does it automatically when at least one :class:`ConfiguratorPage` is
@@ -422,6 +452,8 @@ def register_configurator_callbacks(app: dash.Dash, registry: CardRegistry) -> N
         The Dash app to register callbacks on.
     registry : CardRegistry
         Registry used to resolve template IDs at callback time.
+    preset_store : PresetStore, optional
+        If given, also wire preset load/save callbacks. By default ``None``.
     """
     from dash import ALL, Input, Output, State, callback_context, no_update
 
@@ -544,6 +576,11 @@ def register_configurator_callbacks(app: dash.Dash, registry: CardRegistry) -> N
     def _render_pane(working):
         cards = instantiate_working_list(working or [], registry)
         return render_working_list(cards, columns=2)
+
+    if preset_store is not None:
+        from dash_cockpit._presets import register_preset_callbacks
+
+        register_preset_callbacks(app, preset_store, WORKING_LIST_STORE_ID)
 
 
 def configurator_export_data(working: list[dict[str, Any]], registry: CardRegistry):

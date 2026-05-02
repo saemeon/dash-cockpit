@@ -25,6 +25,7 @@ from dash_cockpit._packing import (
     register_layout_callbacks,
 )
 from dash_cockpit._page import ConfiguratorPage, Page
+from dash_cockpit._presets import PresetStore
 from dash_cockpit._refresh import register_refresh_callbacks
 from dash_cockpit._registry import CardRegistry
 
@@ -100,6 +101,11 @@ class CockpitApp:
         Format label → backend mapping. When non-empty, a "Download report"
         button appears in the sidebar and a format-radio modal lets the user
         pick a backend. By default ``None`` (no export UI).
+    preset_store : PresetStore, optional
+        Backend for the preset library. When provided, every
+        :class:`ConfiguratorPage` shows a Load/Save preset section in its
+        sidebar. Curated presets seeded into the store appear alongside
+        user-saved ones. By default ``None`` (no preset UI).
 
     Attributes
     ----------
@@ -130,11 +136,13 @@ class CockpitApp:
         title: str = "Cockpit",
         theme: str = dbc.themes.BOOTSTRAP,
         export_backends: dict[str, ExportBackend] | None = None,
+        preset_store: PresetStore | None = None,
     ) -> None:
         self._registry = registry
         self._pages = pages
         self._title = title
         self._export_backends: dict[str, ExportBackend] = dict(export_backends or {})
+        self._preset_store = preset_store
         self._app = dash.Dash(
             __name__,
             external_stylesheets=[theme],
@@ -152,7 +160,11 @@ class CockpitApp:
         register_edit_mode_callbacks(self._app)
         register_refresh_callbacks(self._app, self._registry)
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
-            register_configurator_callbacks(self._app, self._registry)
+            register_configurator_callbacks(
+                self._app,
+                self._registry,
+                preset_store=self._preset_store,
+            )
 
     def _build_sidebar(self) -> html.Div:
         nav_items = [_nav_link(p, i) for i, p in enumerate(self._pages)]
@@ -275,7 +287,9 @@ class CockpitApp:
             page = self._resolve_page(pathname)
             if page is None:
                 return html.P("No pages configured.")
-            return render_page(page, self._registry)
+            return render_page(
+                page, self._registry, preset_store=self._preset_store
+            )
 
         if not self._export_backends:
             return

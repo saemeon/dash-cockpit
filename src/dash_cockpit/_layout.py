@@ -15,6 +15,7 @@ from dash_cockpit._refresh import wrap_for_refresh
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
+    from dash_cockpit._presets import PresetStore
     from dash_cockpit._registry import CardRegistry
 
 
@@ -67,7 +68,11 @@ class _CardShim:
 
 
 def render_page(
-    page: Page, registry: CardRegistry, context: dict | None = None
+    page: Page,
+    registry: CardRegistry,
+    context: dict | None = None,
+    *,
+    preset_store: PresetStore | None = None,
 ) -> Component:
     """Render any concrete :class:`Page` into a Dash component.
 
@@ -77,7 +82,8 @@ def render_page(
       per-card sizes from ``CARD_META["size"]`` and localStorage persistence.
     - :class:`UserPage` → fixed Bootstrap rows from the explicit 2D layout
       (no drag-drop, no persistence).
-    - :class:`ConfiguratorPage` → forwarded to :func:`render_configurator`.
+    - :class:`ConfiguratorPage` → forwarded to :func:`render_configurator`,
+      with optional ``preset_store`` for the preset library UI.
 
     Parameters
     ----------
@@ -88,6 +94,9 @@ def render_page(
     context : dict, optional
         Render context passed to each card's ``render``. Treated as ``{}``
         when ``None``. By default ``None``.
+    preset_store : PresetStore, optional
+        Forwarded to :func:`render_configurator` for ``ConfiguratorPage``.
+        Ignored for other page types. By default ``None``.
 
     Returns
     -------
@@ -98,7 +107,7 @@ def render_page(
         context = {}
 
     if isinstance(page, ConfiguratorPage):
-        return render_configurator(page, registry)
+        return render_configurator(page, registry, preset_store=preset_store)
 
     if isinstance(page, TeamPage):
         components = [_resolve_card(cid, registry, context) for cid in page.card_ids]
