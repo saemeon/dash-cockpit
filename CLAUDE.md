@@ -14,7 +14,7 @@ The cockpit is structurally an iOS-style widget shell.
 | App developer      | **Team package**      |
 
 What this analogy gets you — for free:
-- **Cards must be independent.** No cross-card state. (Like widgets.)
+- **Cards are independent of each other.** No cross-card state, no callbacks reaching across. (Like widgets.) But *within* a card, anything Dash supports is fine: a card may bundle a date picker with two charts, run its own callbacks, hold internal `dcc.Store`s, fetch from any backend. The boundary is between cards, not inside one. Need a "group of related views"? Ship them as one larger card (`size=(2, 2)`) — that's the composite pattern.
 - **Cards are small and focused.** If it's bigger than a widget, it's a dashboard, not a card.
 - **Cockpit owns layout, not logic.** Cards never decide their own placement.
 - **Graceful degradation.** One broken card must not break the page (like a crashed widget on iOS).
@@ -118,6 +118,18 @@ Pages are N-column widget grids:
   - URL hydration callback in `_configurator.py` seeds `WORKING_LIST_STORE_ID` from the URL on first render only — once the user has cards, the URL is ignored. `KeyError` and `PermissionError` from the preset loader are both swallowed silently to avoid leaking presence-vs-permission via URL probing.
   - Share button (configurator sidebar) builds a `?b=...` URL clientside (canonical-key JSON, urlsafe base64, no padding) and copies it to clipboard. Long-URL warning above ~2000 chars suggests a preset instead.
   - Status messages target `STATUS_ID` (always present) rather than `PRESET_STATUS_ID`, so URL hydration and Share work in deployments without a configured preset store.
+- **Phase 4.6 — Cockpit-owned card chrome:** ✅ shipped.
+  - New module `_chrome.py` defines `card_chrome(body, *, card_id, title, actions, extra_menu_items)` — the standard frame around every card body: border, rounded corners, header with title and ⋮ menu, body container with `flex: 1` + `overflow: auto`.
+  - `_layout.py._resolve_card` and `_configurator.py._render_card_tile` both wrap card bodies in `card_chrome` instead of returning bare bodies. The configurator passes a "Remove" item via `extra_menu_items`.
+  - Card protocol narrowed: `render(context)` returns the *body only*. Teams must not produce their own border, title, or outer padding — that's the cockpit's job. Existing demo cards updated (H6 titles + outer Divs removed).
+  - Per-card menus now live in the chrome header (not absolute-positioned overlays). Edit-mode visibility CSS (`CARD_MENU_CLASS`) still applies.
+- **Phase 4.7 — Density tuning + square unit cells:** ✅ shipped.
+  - Default `columns` raised from `2` to `6` (`TeamPage`, `ConfiguratorPage`) — denser raster, closer to macOS-widget feel.
+  - **Square unit cells.** `register_square_cell_callbacks` (clientside) measures each grid's column pixel width and writes it back as `rowHeight`. A `(1, 1)` card is therefore a true square; `(2, 1)` is 2:1 wide; `(1, 2)` is 1:2 tall; `(2, 2)` is a 2× square. Aspect ratios stay constant across viewport sizes — only the absolute pixel size of the unit cell changes. Floor at `SQUARE_CELL_FLOOR = 80px` so very narrow viewports don't produce sub-readable cells. Window resize triggers re-measure via `GRID_RESIZE_TICK_ID` store + a one-time `window.addEventListener('resize', ...)` using `dash_clientside.set_props`.
+  - **No viewport-fill.** We tried stretching `rowHeight` to make total grid height fill the viewport, and reverted — stretched cards felt wrong (a `(2, 2)` card on a 2-row page took the entire screen). iOS/Bloomberg both use fixed pixel sizes; empty space below sparse pages is honest. See `RESEARCH_NOTES.md` "Card sizing".
+  - **`CockpitApp(content_max_width=1600)`.** Page-content area is capped (default 1600px) and centered, preventing card spread on ultra-wide monitors. `content_max_width=None` opts out (legacy `flex: 1` behaviour).
+  - Grid margins tightened from `[10, 10]` to `[6, 6]` for a denser look.
+  - Named-size vocabulary (`"small" / "wide" / "tall" / "medium" / ...`) is **not** shipped yet; deferred pending real usage signals (see `RESEARCH_NOTES.md` "Card sizing — options for later evaluation").
 - **Phase 5 (next, optional):** `Card.render_settings()` for runtime per-card settings (cardcanvas-style settings drawer — see RESEARCH_NOTES Tier 2.1), drag-from-palette flow, layout snapshotting in presets, preset delete UI.
 
 ## Known limitations / honest caveats
@@ -336,14 +348,10 @@ Implications:
 This keeps system flexible but requires discipline.
 
 9. Interaction model
-Allowed:
-* light interactions inside cards
-* filtering within a card
-* hover/selection states
-* small drilldowns
-Not allowed (initially):
-* cross-card interactions
-* global state dependencies between cards
+
+The boundary is between cards, not inside them. Within a single card, do anything Dash supports — internal state, callbacks, sub-components, even a small form-and-chart pair. Cards may take more grid space (`CARD_META["size"] = (2, 1)` or larger) to host richer compositions; the "one card per insight" rule is about cohesion, not literal size.
+
+What is *not* supported: cross-card interactions, callbacks that reach across cards, or global state shared between cards. Three views that must share state ship as one larger composite card, not three coupled cards. This is what makes per-card error isolation, deterministic `card_id_for(...)`, and the iOS-widget mental model all work.
 
 10. Versioning strategy
 You chose strict versioning:

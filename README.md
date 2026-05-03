@@ -62,27 +62,35 @@ app.run(debug=True)
 
 ## Writing a card
 
-A card is any object with a `CARD_META` dict and a `render(context)` method:
+A card is any object with a `CARD_META` dict and a `render(context)` method. **Return only the body** — the cockpit draws the chrome (border, header with title and ⋮ menu, padding) around it.
 
 ```python
 from dash import html
 
 CARD_META = {
     "id": "revenue_trend",
-    "title": "Revenue Trend",
+    "title": "Revenue Trend",          # shown in the chrome header
     "team": "finance",
     "description": "Monthly revenue development",
     "refresh_interval": 300,
     "category": "finance",
-    "size": (2, 1),  # optional: 2 columns wide, 1 row tall (in grid units)
+    "size": (2, 1),                     # optional: 2 cols × 1 row in grid units
 }
 
 def render(context: dict):
-    # fetch your own data here
-    return html.Div("$12.4M ▲ 3.2%", style={"height": "100%"})
+    # fetch your own data here, return the body content
+    return html.Div("$12.4M ▲ 3.2%")
 ```
 
-Cards must fill their assigned grid cell — use `height: 100%` (or flex layout) on the outermost component, **never** fixed pixel heights. The cockpit guarantees the cell is exactly `row_height × h` pixels tall.
+The cockpit guarantees the body container fills its grid cell vertically and scrolls when content overflows. Don't render your own border, title, or `padding: 16px` — that fights the chrome and produces double-frames.
+
+### What's allowed inside a card
+
+The boundary is between cards, not inside them. Within the body you return, anything Dash supports is fine: internal `dcc.Store`s, multiple callbacks, sub-components, your own forms, your own data fetching. A card can take more grid space (`size=(2, 2)`) and bundle a date picker with two charts in a single tile — that's a composite card, and it's the right pattern when several views genuinely need to share state.
+
+What's *not* supported is the inverse: callbacks reaching *across* cards, or global state shared between them. If three views must move together, ship them as one larger card. Per-card error isolation, deterministic card identity, and the iOS-widget mental model all depend on this.
+
+The cockpit owns the visual chrome — border, rounded corners, header bar with the `CARD_META["title"]`, the `⋮` menu (visible only in edit mode). Don't reproduce these inside your card body; you'll get double-frames.
 
 ## Team package contract
 

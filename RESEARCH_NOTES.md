@@ -816,3 +816,88 @@ Updates to ROADMAP.md based on this research:
 - **New: M2.5 (Edit mode toggle, dcc.Loading wrap)** → small Tier 1
   improvements, stage for the next minor release.
 
+---
+
+## Card sizing — options for later evaluation
+
+Captured 2026-05-03 during a UX pass on the demo. Cards felt too large; references are macOS widgets (small/medium/large/extra-large in a fine icon grid) and Bloomberg terminal (dense, many small panels).
+
+**Shipped:** density tuning — `columns` default `2 → 4`, `DEFAULT_ROW_HEIGHT 280 → 180`. Fixed pixel rows. Cards now closer to macOS-small in feel.
+
+**Tried and reverted (2026-05-03):** viewport-fill clientside callback that adapted `rowHeight = (viewport - margins) / total_rows`. Result was the opposite of what we wanted — pages with few rows produced cards that ballooned to fill the viewport (a `(2, 2)` card on a 2-row page took the entire screen). iOS widgets and Bloomberg panels both use **fixed pixel sizes**, not viewport-stretching. Empty space below a sparse page is honest ("there are only this many rows of content") rather than a bug to paper over. Lesson: do not stretch cards to fill; either ship more cards per page or accept the empty space.
+
+**Subsequently shipped (same day):** square-cell clientside callback in `register_square_cell_callbacks` — `rowHeight = column_width` so every `(1, 1)` is a true square regardless of viewport. `columns` default raised `4 → 6`. `CockpitApp(content_max_width=1600)` caps the page-content area on ultra-wide monitors. macOS-widget feel achieved without viewport-stretching.
+
+### Deferred — user-level cockpit settings panel
+
+Right now `content_max_width`, `columns`, theme are deployment-set on `CockpitApp(...)`. Users would benefit from a per-browser settings panel (sidebar gear icon → modal) where they can override:
+
+- Density: 4 / 6 / 8 columns (drives `columns` per page).
+- Content max width: narrow / wide / unlimited.
+- Theme variant: light / dark.
+- Edit mode default: locked / unlocked on load.
+
+Storage: `dcc.Store(storage_type="local")` with a settings dict. Resolution: user setting → page declaration → cockpit default. Build only when at least one team or user asks for it; keep the simple constructor kwargs as the source of truth until then.
+
+The five options brainstormed (in order of scope):
+
+### Option 1 — Just shrink (the path we took)
+
+Bump default `columns` and lower the row-height floor. No API change. Ships denser visual without touching cards. Authors still write raw `(w, h)` tuples.
+
+**Trade-off:** "what's the right column count?" is arbitrary; varies by screen size. We picked 4 as a middle ground between today's 2 and Bootstrap's 12.
+
+### Option 2 — Named sizes (macOS-style vocabulary)
+
+Add a small vocabulary that resolves to `(w, h)` at pack time, knowing the page's `columns`:
+
+```python
+SIZE_ALIASES = {
+    "small":  (1, 1),         # smallest tile
+    "wide":   (2, 1),
+    "tall":   (1, 2),
+    "medium": (2, 2),         # square
+    "large":  (3, 2),
+    "banner": ("page", 1),    # spans full row, special "page" sentinel
+    "full":   ("page", 2),
+}
+```
+
+Card declares `"size": "wide"` instead of `(2, 1)`. Raw tuples remain the escape hatch. ~20 lines of resolution in `_layout._card_size` and `_configurator._card_size_from_meta`.
+
+**Why we'd pick this up:** card metadata reads like intent; vocabulary is robust to changing column counts; clearer in code review. Ship after we see whether Option 1 alone is enough.
+
+**Risks:** vocabulary inflation (how many names is too many?); the `"page"` sentinel is a special case the resolver must handle. Pick a small set (≤ 7) and let raw tuples cover the rest.
+
+### Option 3 — Bloomberg-style (12-col grid + free pixel resize)
+
+Default `columns=12` (Bootstrap-grid scale), `MIN_ROW_HEIGHT=60`. Cards declare integer cell counts in a fine grid. Power users resize freely.
+
+**Why we'd pick this up:** maximum density and shape variety; familiar to Bootstrap users.
+
+**Why we deferred it:** higher cognitive load per card author; small text becomes hard to read inside tiny cells; fights the "card-is-a-glance" intent. Better as an opt-in per page (`TeamPage(columns=12)`) than as the default.
+
+### Option 4 — Two-axis decoupled (Bootstrap-horizontal, coarse-vertical)
+
+12 horizontal columns, 1–3 vertical rows only. Decouples "how wide" from "how tall" because vertical eats viewport much faster than horizontal.
+
+**Why we'd pick this up:** generous horizontal precision, restrained vertical; matches a lot of dashboard intuition.
+
+**Why we deferred it:** mixes two scales — another grammar to learn. Probably only worth it if Option 2's vocabulary doesn't generalise.
+
+### Option 5 — Hybrid (Option 1 + Option 2)
+
+Recommended end state once we've felt out the right column count. Steps:
+
+1. Density tuning (Option 1) — done.
+2. Add named-size resolver (Option 2) — pending.
+3. Migrate demo cards to named sizes one at a time, A/B the vocabulary.
+
+### What to watch for before re-evaluating
+
+- Do real cards feel constrained by `(1, 1)` being 1/4 width × 1 row tall? If yes, denser default needed (Option 3-style).
+- Do authors keep writing raw tuples and complaining? → ship Option 2.
+- Do cards on different page widths look wrong? → Option 4 or responsive sizes (covered separately as the iOS-breakpoint idea, not yet on the roadmap).
+- Empty grid cells (when card sizes don't tile cleanly into `columns`): are users bothered, or is "drag to fill" enough?
+
+Don't pick a direction from this section without first looking at a populated cockpit deployment — these are all ergonomic questions that depend on real card distributions, not framework theory.
