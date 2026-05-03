@@ -30,7 +30,7 @@ class TeamPage:
         By default ``""``.
     columns : int
         Grid width in widget units. Each card defaults to ``(1, 1)``;
-        cards declaring ``size=(2, 1)`` span two columns. By default ``2``.
+        cards declaring ``size=(2, 1)`` span two columns. By default ``12``.
     grid_columns : int
         Reserved for future use. By default ``0`` (use ``columns``).
 
@@ -48,7 +48,7 @@ class TeamPage:
     card_ids: list[str]
     id: str = ""
     team: str = ""
-    columns: int = 2
+    columns: int = 12
     grid_columns: int = 0
 
 
@@ -103,7 +103,7 @@ class ConfiguratorPage:
         Static cards always shown above the configurator. Useful for
         "always-on" KPIs alongside user-built ones. By default ``[]``.
     columns : int
-        Grid width for the working list. By default ``2``.
+        Grid width for the working list. By default ``12``.
     id : str, optional
         Stable URL slug for this page. When empty, the cockpit derives one
         from ``name``. By default ``""``.
@@ -120,7 +120,7 @@ class ConfiguratorPage:
     name: str
     template_ids: list[str]
     initial_card_ids: list[str] = field(default_factory=list)
-    columns: int = 2
+    columns: int = 12
     id: str = ""
 
 

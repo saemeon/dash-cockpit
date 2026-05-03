@@ -25,12 +25,13 @@ if TYPE_CHECKING:
     from dash.development.base_component import Component
 
 
-DEFAULT_ROW_HEIGHT = 280
-"""Default pixel height of one grid row.
+DEFAULT_ROW_HEIGHT = 180
+"""Fallback pixel height of one grid row.
 
-Cards stretch to fill the cell via ``height: 100%`` on the wrapper Div.
-A card declaring ``size=(2, 1)`` is therefore one row tall (``DEFAULT_ROW_HEIGHT``
-pixels), and ``size=(2, 2)`` is two rows tall.
+Used only as the initial value before
+:func:`register_square_cell_callbacks` measures the grid's column width and
+locks ``rowHeight = column_width`` (square unit cells, macOS-widget style).
+A card declaring ``size=(2, 1)`` is one cell tall, ``size=(2, 2)`` is two.
 """
 
 
@@ -70,6 +71,22 @@ EDIT_MODE_CLASS = "cockpit-edit-mode"
 
 CARD_MENU_CLASS = "cockpit-card-menu"
 """CSS class on per-card ⋮ menu wrappers — hidden in CSS when not in edit mode."""
+
+SQUARE_CELL_FLOOR = 80
+"""Floor on the auto-computed square-cell pixel size.
+
+A grid's ``rowHeight`` is set clientside to its column pixel width so a
+``(1, 1)`` card is a square. On very narrow viewports this floor prevents
+sub-readable cells.
+"""
+
+GRID_RESIZE_TICK_ID = "_cockpit_grid_resize_tick"
+"""ID of an empty :class:`dcc.Store` used as a global resize trigger.
+
+Bumped clientside on every ``window.resize`` so the square-cell callback
+re-measures grid widths.
+"""
+
 
 
 def grid_id(key: str) -> dict[str, str]:
@@ -275,8 +292,8 @@ def pack_grid(
         "isDraggable": draggable,
         "isResizable": resizable,
         "compactType": "vertical",
-        "margin": [10, 10],
-        "containerPadding": [10, 10],
+        "margin": [6, 6],
+        "containerPadding": [6, 6],
         "draggableCancel": DRAGGABLE_CANCEL_SELECTOR,
     }
     if resize_handles is not None:
@@ -406,3 +423,65 @@ def register_edit_mode_callbacks(app) -> None:
         Input(EDIT_MODE_STORE_ID, "data"),
         State({"type": GRID_ID_TYPE, "key": ALL}, "id"),
     )
+
+
+def register_square_cell_callbacks(app) -> None:
+    """Lock each grid's ``rowHeight`` to its column pixel width — square unit cells.
+
+    Effect: a card declaring ``size=(1, 1)`` is a true square; ``(2, 1)`` is
+    a 2:1 wide rectangle; ``(1, 2)`` is a 1:2 tall rectangle. Aspect ratios
+    are preserved across viewport sizes — only the absolute pixel size of
+    the unit cell changes.
+
+    Mechanism: one clientside callback measures each grid's ``clientWidth``,
+    subtracts the container padding and per-column margins, divides by
+    ``cols``, and writes the result back as ``rowHeight``. Triggered on
+    grid mount, on layout change, and on window resize (via a one-time
+    ``resize`` listener that bumps :data:`GRID_RESIZE_TICK_ID`).
+
+    Parameters
+    ----------
+    app : dash.Dash
+        The app to register on. Called once from :class:`CockpitApp`.
+    """
+    from dash import ALL, Input, Output, State
+
+    app.clientside_callback(
+        f"""
+        function(_tick, _layouts, gridIds, colsList) {{
+            // Install one-time window resize listener that bumps the tick store.
+            if (!window._cockpitSquareCellBound) {{
+                window._cockpitSquareCellBound = true;
+                window.addEventListener('resize', () => {{
+                    if (window.dash_clientside && window.dash_clientside.set_props) {{
+                        window.dash_clientside.set_props(
+                            '{GRID_RESIZE_TICK_ID}',
+                            {{data: Date.now()}}
+                        );
+                    }}
+                }});
+            }}
+            if (!gridIds || !gridIds.length) return [];
+            const containerPad = 12;          // 6 + 6 horizontal padding
+            const colMargin = 6;
+            return gridIds.map((gid, i) => {{
+                const idStr = JSON.stringify(gid, Object.keys(gid).sort());
+                const el = document.querySelector(`[id='${{idStr}}']`);
+                if (!el) return window.dash_clientside.no_update;
+                const cols = colsList[i] || 4;
+                const usable = el.clientWidth - containerPad - (cols - 1) * colMargin;
+                const cellWidth = Math.max(
+                    {SQUARE_CELL_FLOOR}, Math.floor(usable / cols)
+                );
+                return cellWidth;
+            }});
+        }}
+        """,
+        Output({"type": GRID_ID_TYPE, "key": ALL}, "rowHeight"),
+        Input(GRID_RESIZE_TICK_ID, "data"),
+        Input({"type": GRID_ID_TYPE, "key": ALL}, "layout"),
+        State({"type": GRID_ID_TYPE, "key": ALL}, "id"),
+        State({"type": GRID_ID_TYPE, "key": ALL}, "cols"),
+    )
+
+

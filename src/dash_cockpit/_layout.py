@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from dash import html
 
+from dash_cockpit._chrome import card_chrome
 from dash_cockpit._configurator import render_configurator
 from dash_cockpit._error import error_boundary
 from dash_cockpit._packing import pack_grid, pack_row
@@ -33,7 +34,7 @@ def _card_size(card_id: str, registry: CardRegistry) -> tuple[int, int]:
 
 
 def _resolve_card(card_id: str, registry: CardRegistry, context: dict) -> Component:
-    """Resolve and render one card, wrap for refresh, or warn if unknown."""
+    """Resolve and render one card, wrap in chrome, or warn if unknown."""
     try:
         entry = registry.get(card_id)
     except KeyError:
@@ -46,10 +47,17 @@ def _resolve_card(card_id: str, registry: CardRegistry, context: dict) -> Compon
                 "borderRadius": "4px",
             },
         )
-    card_obj = _CardShim(entry["render"], entry["meta"])
+    meta = entry["meta"]
+    card_obj = _CardShim(entry["render"], meta)
     body = error_boundary(card_obj, context)
-    refresh_interval = entry["meta"].get("refresh_interval", 0)
-    return wrap_for_refresh(body, card_id, refresh_interval)
+    refresh_interval = meta.get("refresh_interval", 0)
+    body = wrap_for_refresh(body, card_id, refresh_interval)
+    return card_chrome(
+        body,
+        card_id=card_id,
+        title=meta.get("title", ""),
+        actions=meta.get("actions"),
+    )
 
 
 class _CardShim:

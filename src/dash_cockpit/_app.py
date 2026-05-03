@@ -21,9 +21,11 @@ from dash_cockpit._packing import (
     EDIT_MODE_CLASS,
     EDIT_MODE_STORE_ID,
     EDIT_MODE_TOGGLE_ID,
+    GRID_RESIZE_TICK_ID,
     PAGE_CONTENT_ID,
     register_edit_mode_callbacks,
     register_layout_callbacks,
+    register_square_cell_callbacks,
 )
 from dash_cockpit._page import ConfiguratorPage, Page
 from dash_cockpit._presets import PresetStore
@@ -130,6 +132,11 @@ class CockpitApp:
         :class:`ConfiguratorPage` shows a Load/Save preset section in its
         sidebar. Curated presets seeded into the store appear alongside
         user-saved ones. By default ``None`` (no preset UI).
+    content_max_width : int or None, optional
+        Pixel cap on the page-content area's width. Above this width the
+        content stays centered with empty margins (no full-screen stretch
+        on ultra-wide monitors). Pass ``None`` to disable the cap (legacy
+        ``flex: 1`` behaviour). By default ``1600``.
 
     Attributes
     ----------
@@ -161,12 +168,14 @@ class CockpitApp:
         theme: str = dbc.themes.BOOTSTRAP,
         export_backends: dict[str, ExportBackend] | None = None,
         preset_store: PresetStore | None = None,
+        content_max_width: int | None = 1600,
     ) -> None:
         self._registry = registry
         self._pages = pages
         self._title = title
         self._export_backends: dict[str, ExportBackend] = dict(export_backends or {})
         self._preset_store = preset_store
+        self._content_max_width = content_max_width
         self._pages_by_slug: dict[str, Page] = {}
         self._slugs: list[str] = []
         for page in pages:
@@ -194,6 +203,7 @@ class CockpitApp:
         self._register_callbacks()
         register_layout_callbacks(self._app)
         register_edit_mode_callbacks(self._app)
+        register_square_cell_callbacks(self._app)
         register_refresh_callbacks(self._app, self._registry)
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(
@@ -287,10 +297,19 @@ class CockpitApp:
 
     def _build_layout(self) -> html.Div:
         sidebar = self._build_sidebar()
-        content = html.Div(
-            id=PAGE_CONTENT_ID,
-            style={"flex": "1", "padding": "24px", "overflowY": "auto"},
-        )
+        content_style: dict[str, Any] = {
+            "flex": "1",
+            "padding": "24px",
+            "overflowY": "auto",
+        }
+        if self._content_max_width is not None:
+            # Cap width and center within the remaining flex space — keeps
+            # cards a sensible size on ultra-wide displays.
+            content_style["maxWidth"] = f"{self._content_max_width}px"
+            content_style["marginLeft"] = "auto"
+            content_style["marginRight"] = "auto"
+            content_style["width"] = "100%"
+        content = html.Div(id=PAGE_CONTENT_ID, style=content_style)
         children: list[Any] = [
             dcc.Location(id="_cockpit_url"),
             # Persisted edit-mode state — survives reloads.
@@ -299,6 +318,9 @@ class CockpitApp:
                 storage_type="local",
                 data=False,
             ),
+            # Resize tick — bumped clientside on window.resize so square-cell
+            # callback re-measures grid widths.
+            dcc.Store(id=GRID_RESIZE_TICK_ID, data=0),
             sidebar,
             content,
         ]

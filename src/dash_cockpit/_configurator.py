@@ -23,7 +23,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from dash_cockpit._error import error_boundary
-from dash_cockpit._packing import CARD_MENU_CLASS, pack_grid
+from dash_cockpit._packing import pack_grid
 from dash_cockpit._refresh import wrap_for_refresh
 from dash_cockpit._template import (
     ParameterSpec,
@@ -48,6 +48,7 @@ ADD_BTN_ID = "_cockpit_cfg_add"
 CLEAR_BTN_ID = "_cockpit_cfg_clear"
 SHARE_BTN_ID = "_cockpit_cfg_share"
 WORKING_LIST_STORE_ID = "_cockpit_cfg_store"
+COLUMNS_STORE_ID = "_cockpit_cfg_columns"
 CARDS_PANE_ID = "_cockpit_cfg_cards"
 STATUS_ID = "_cockpit_cfg_status"
 
@@ -205,68 +206,28 @@ def instantiate_working_list(
 
 
 def _render_card_tile(card: Any, context: dict) -> Component:
-    """Render a single working-list card as a tile with the ⋮ menu overlay.
+    """Render a single working-list card via the shared chrome, with a Remove item.
 
     Returns a bare component (no column wrapper) — packing is the caller's job.
     """
+    from dash_cockpit._chrome import card_chrome
+
     cid = card.CARD_META["id"]
     refresh_interval = card.CARD_META.get("refresh_interval", 0)
     body = wrap_for_refresh(error_boundary(card, context), cid, refresh_interval)
-    menu = dbc.DropdownMenu(
-        label="⋮",
-        children=[
-            # Inject opt-in actions declared by the card (each item is {"id": ..., "label": ...})
-            *[
-                dbc.DropdownMenuItem(
-                    a.get("label", a.get("id")),
-                    id={
-                        "type": "_cockpit_card_action",
-                        "card_id": cid,
-                        "action": a.get("id"),
-                    },
-                    n_clicks=0,
-                )
-                for a in card.CARD_META.get("actions", [])
-            ],
-            dbc.DropdownMenuItem(
-                "Remove",
-                id=remove_btn_id(cid),
-                n_clicks=0,
-            ),
+    return card_chrome(
+        body,
+        card_id=cid,
+        title=card.CARD_META.get("title", ""),
+        actions=card.CARD_META.get("actions"),
+        extra_menu_items=[
+            dbc.DropdownMenuItem("Remove", id=remove_btn_id(cid), n_clicks=0)
         ],
-        size="sm",
-        color="link",
-        align_end=True,
-        toggle_style={
-            "color": "#6c757d",
-            "padding": "0 6px",
-            "fontSize": "1.2rem",
-            "lineHeight": "1",
-            "border": "none",
-            "background": "transparent",
-            "boxShadow": "none",
-        },
-    )
-    return html.Div(
-        [
-            html.Div(
-                menu,
-                className=CARD_MENU_CLASS,
-                style={
-                    "position": "absolute",
-                    "top": "4px",
-                    "right": "4px",
-                    "zIndex": 2,
-                },
-            ),
-            body,
-        ],
-        style={"position": "relative"},
     )
 
 
 def render_working_list(
-    cards: list[Any], columns: int = 2, context: dict | None = None
+    cards: list[Any], columns: int = 12, context: dict | None = None
 ) -> Component:
     """Render the working list of cards as a draggable grid with ⋮ menus.
 
@@ -421,6 +382,7 @@ def render_configurator(
     return html.Div(
         [
             dcc.Store(id=WORKING_LIST_STORE_ID, data=[], storage_type="session"),
+            dcc.Store(id=COLUMNS_STORE_ID, data=page.columns),
             html.Div(
                 [sidebar, main],
                 style={"display": "flex", "minHeight": "60vh"},
@@ -580,10 +542,11 @@ def register_configurator_callbacks(
     @app.callback(
         Output(CARDS_PANE_ID, "children"),
         Input(WORKING_LIST_STORE_ID, "data"),
+        State(COLUMNS_STORE_ID, "data"),
     )
-    def _render_pane(working):
+    def _render_pane(working, columns):
         cards = instantiate_working_list(working or [], registry)
-        return render_working_list(cards, columns=2)
+        return render_working_list(cards, columns=columns or 12)
 
     # URL hydration — seed the working list from ?b=<base64> or
     # ?preset=<group>/<name> on first load. Empty-only seeding: if the user
