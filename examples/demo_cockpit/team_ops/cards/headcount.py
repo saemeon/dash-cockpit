@@ -7,6 +7,7 @@ CARD_META = {
     "description": "Active headcount by department",
     "refresh_interval": 0,
     "category": "people",
+    "size": (3, 5),
 }
 
 _DEPARTMENTS = [
@@ -23,7 +24,6 @@ def render(context: dict):
     rows = [html.Tr([html.Td(dept), html.Td(str(n))]) for dept, n in _DEPARTMENTS]
     return html.Div(
         [
-            html.H5("Headcount", style={"marginBottom": "8px"}),
             html.P(f"Total: {total} employees", style={"fontWeight": "bold"}),
             html.Table(
                 [
@@ -32,13 +32,7 @@ def render(context: dict):
                 ],
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
-        ],
-        style={
-            "padding": "16px",
-            "background": "#fff",
-            "border": "1px solid #dee2e6",
-            "borderRadius": "6px",
-        },
+        ]
     )
 
 

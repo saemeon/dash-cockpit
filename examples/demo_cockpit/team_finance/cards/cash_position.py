@@ -7,6 +7,7 @@ CARD_META = {
     "description": "Current cash and liquidity summary",
     "refresh_interval": 600,
     "category": "finance",
+    "size": (4, 4),
 }
 
 
@@ -31,19 +32,12 @@ def render(context: dict):
 
     return html.Div(
         [
-            html.H5("Cash Position", style={"marginBottom": "8px"}),
             html.P("As of today", style={"color": "#6c757d", "fontSize": "0.85em"}),
             html.Table(
                 html.Tbody(rows),
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
-        ],
-        style={
-            "padding": "16px",
-            "background": "#fff",
-            "border": "1px solid #dee2e6",
-            "borderRadius": "6px",
-        },
+        ]
     )
 
 

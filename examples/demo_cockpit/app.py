@@ -34,13 +34,11 @@ def build_app() -> CockpitApp:
             name="Finance Overview",
             card_ids=["revenue_trend", "cash_position"],
             team="finance",
-            columns=2,
         ),
         TeamPage(
             name="Operations",
             card_ids=["headcount", "ticket_volume", "broken_card"],
             team="ops",
-            columns=2,
         ),
         UserPage(
             name="Executive Mix",
@@ -52,7 +50,6 @@ def build_app() -> CockpitApp:
         ConfiguratorPage(
             name="KPI Builder",
             template_ids=["kpi_lookup"],
-            columns=2,
         ),
     ]
 

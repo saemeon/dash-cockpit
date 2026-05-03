@@ -8,6 +8,7 @@ CARD_META = {
     "description": "Monthly revenue development vs. prior year",
     "refresh_interval": 300,
     "category": "finance",
+    "size": (8, 4),
 }
 
 _DATA = [
@@ -25,7 +26,6 @@ def render(context: dict):
     ]
     return html.Div(
         [
-            html.H5("Revenue Trend", style={"marginBottom": "8px"}),
             html.P(
                 "$12.4M ▲ 22.8% vs prior year",
                 style={"color": "#198754", "fontWeight": "bold"},
@@ -45,13 +45,7 @@ def render(context: dict):
                 ],
                 style={"width": "100%", "fontSize": "0.9em"},
             ),
-        ],
-        style={
-            "padding": "16px",
-            "background": "#fff",
-            "border": "1px solid #dee2e6",
-            "borderRadius": "6px",
-        },
+        ]
     )
 
 

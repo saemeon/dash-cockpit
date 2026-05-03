@@ -43,6 +43,7 @@ class _KpiCard:
             "description": f"{metric} for {division} in {year}",
             "refresh_interval": 0,
             "category": "finance",
+            "size": (3, 3),
         }
 
     def _value(self) -> float | None:
@@ -70,18 +71,7 @@ class _KpiCard:
                     ),
                 ]
             )
-        return html.Div(
-            [
-                html.H6(self.CARD_META["title"], style={"marginBottom": "8px"}),
-                body,
-            ],
-            style={
-                "padding": "16px",
-                "background": "#fff",
-                "border": "1px solid #dee2e6",
-                "borderRadius": "6px",
-            },
-        )
+        return body
 
     def get_tables(self) -> dict[str, pd.DataFrame]:
         v = self._value()

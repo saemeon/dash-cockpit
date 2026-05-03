@@ -7,6 +7,7 @@ CARD_META = {
     "description": "Open and resolved support tickets this week",
     "refresh_interval": 120,
     "category": "operations",
+    "size": (3, 5),
 }
 
 _STATS = [
@@ -38,16 +39,9 @@ def render(context: dict):
     ]
     return html.Div(
         [
-            html.H5("Support Ticket Volume", style={"marginBottom": "8px"}),
             html.P("This week", style={"color": "#6c757d", "fontSize": "0.85em"}),
             html.Div(items),
-        ],
-        style={
-            "padding": "16px",
-            "background": "#fff",
-            "border": "1px solid #dee2e6",
-            "borderRadius": "6px",
-        },
+        ]
     )
 
 

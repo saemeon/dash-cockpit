@@ -7,6 +7,7 @@ CARD_META = {
     "description": "Always fails to demonstrate error boundary",
     "refresh_interval": 0,
     "category": "demo",
+    "size": (6, 5),
 }
 
 
