@@ -4,7 +4,7 @@ from dash_cockpit._page import ConfiguratorPage, TeamPage, UserPage, page_card_i
 def test_team_page_defaults():
     p = TeamPage(name="Finance", card_ids=["rev", "cost"])
     assert p.team == ""
-    assert p.columns == 2
+    assert p.columns == 12
 
 
 def test_team_page_card_ids():
@@ -30,7 +30,7 @@ def test_team_page_empty():
 def test_configurator_page_defaults():
     p = ConfiguratorPage(name="Build your own", template_ids=["kpi"])
     assert p.initial_card_ids == []
-    assert p.columns == 2
+    assert p.columns == 12
 
 
 def test_configurator_page_card_ids_returns_initial_only():
