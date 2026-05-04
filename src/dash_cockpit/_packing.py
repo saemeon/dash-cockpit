@@ -25,13 +25,15 @@ if TYPE_CHECKING:
     from dash.development.base_component import Component
 
 
-DEFAULT_ROW_HEIGHT = 180
+DEFAULT_ROW_HEIGHT = 100
 """Fallback pixel height of one grid row.
 
 Used only as the initial value before
 :func:`register_square_cell_callbacks` measures the grid's column width and
 locks ``rowHeight = column_width`` (square unit cells, macOS-widget style).
 A card declaring ``size=(2, 1)`` is one cell tall, ``size=(2, 2)`` is two.
+Sized close to a typical square cell at 12 cols / ~1200px content width so
+the pre-measure flash matches the post-measure size.
 """
 
 
@@ -348,16 +350,22 @@ def register_layout_callbacks(app) -> None:
         prevent_initial_call=True,
     )
 
-    # Restore: when the store hydrates from localStorage, push back into the grid.
+    # Restore: when the store hydrates from localStorage, merge saved entries
+    # back into the grid, by id. Saved positions override; new cards (ids not
+    # in the saved layout) keep their fresh CARD_META size — otherwise newly
+    # added cards collapse to (1, 1) auto-placement.
     # Equality guard prevents an infinite save->restore->save loop.
     app.clientside_callback(
         """
         function(timestamp, stored, current) {
             if (!stored || !stored.length) return window.dash_clientside.no_update;
-            if (JSON.stringify(stored) === JSON.stringify(current)) {
+            const storedById = {};
+            (stored || []).forEach(e => { storedById[e.i] = e; });
+            const merged = (current || []).map(c => storedById[c.i] || c);
+            if (JSON.stringify(merged) === JSON.stringify(current)) {
                 return window.dash_clientside.no_update;
             }
-            return stored;
+            return merged;
         }
         """,
         Output(grid_id(MATCH), "layout"),
@@ -465,8 +473,11 @@ def register_square_cell_callbacks(app) -> None:
             const containerPad = 12;          // 6 + 6 horizontal padding
             const colMargin = 6;
             return gridIds.map((gid, i) => {{
+                // Dash renders pattern-matching dict ids as JSON strings with
+                // alphabetically sorted keys. getElementById accepts the raw
+                // string (no CSS escaping needed, unlike querySelector).
                 const idStr = JSON.stringify(gid, Object.keys(gid).sort());
-                const el = document.querySelector(`[id='${{idStr}}']`);
+                const el = document.getElementById(idStr);
                 if (!el) return window.dash_clientside.no_update;
                 const cols = colsList[i] || 4;
                 const usable = el.clientWidth - containerPad - (cols - 1) * colMargin;

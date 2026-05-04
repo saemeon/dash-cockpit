@@ -124,7 +124,7 @@ def render_page(
             components,
             ids=list(page.card_ids),
             columns=page.columns,
-            persist_key=f"team:{page.name}",
+            persist_key=f"team-v2:{page.name}",
             sizes=sizes,
         )
 

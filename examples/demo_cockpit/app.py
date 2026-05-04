@@ -27,7 +27,9 @@ from dash_cockpit import (  # noqa: E402
 
 def build_app() -> CockpitApp:
     registry = CardRegistry()
-    registry.load_packages(["team_finance", "team_ops"])
+    registry.load_packages(["team_finance", "team_ops", "team_sizes"])
+
+    from team_sizes import SIZE_CARD_IDS
 
     pages = [
         TeamPage(
@@ -50,6 +52,11 @@ def build_app() -> CockpitApp:
         ConfiguratorPage(
             name="KPI Builder",
             template_ids=["kpi_lookup"],
+        ),
+        TeamPage(
+            name="Size Sampler",
+            card_ids=SIZE_CARD_IDS,
+            team="sizes",
         ),
     ]
 

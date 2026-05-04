@@ -260,7 +260,7 @@ def render_working_list(
         tiles,
         ids=ids,
         columns=columns,
-        persist_key="configurator",
+        persist_key="configurator-v2",
         sizes=sizes,
     )
 

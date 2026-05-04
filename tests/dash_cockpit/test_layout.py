@@ -93,7 +93,7 @@ def test_render_team_page_emits_layout_store(make_card):
     store = _extract_store(result)
     assert store.storage_type == "local"
     # store id is a dict with persist key derived from page name
-    assert store.id["key"] == "team:Test"
+    assert store.id["key"] == "team-v2:Test"
 
 
 def test_render_page_no_context(make_card):
