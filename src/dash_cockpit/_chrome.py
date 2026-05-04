@@ -42,12 +42,20 @@ _CARD_STYLE = {
     "borderRadius": "8px",
     "boxShadow": "0 1px 2px rgba(0, 0, 0, 0.04)",
     "overflow": "hidden",
+    # border-box so the card's 1px border fits inside the cell instead of
+    # protruding past it.
+    "boxSizing": "border-box",
 }
 
 _BODY_STYLE = {
     "height": "100%",
     "padding": "12px",
     "overflow": "auto",
+    # border-box so padding eats into the declared height rather than
+    # adding to it. Without this, body renders 24px taller than the card's
+    # content area and overflow:auto draws a phantom scrollbar even when
+    # the card has nothing to scroll.
+    "boxSizing": "border-box",
 }
 
 _MENU_OVERLAY_STYLE = {
