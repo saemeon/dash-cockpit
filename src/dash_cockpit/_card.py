@@ -11,6 +11,96 @@ if TYPE_CHECKING:
     from dash.development.base_component import Component
 
 
+class RenderContext(TypedDict):
+    """Per-render context passed to every :meth:`Card.render` call.
+
+    A frozen contract. Adding fields is forward-compatible; removing or
+    renaming fields breaks every team that has read them. All fields are
+    ``NotRequired`` so the cockpit can omit any it cannot supply (e.g.
+    ``user`` before auth is wired); cards must treat every key as optional
+    and supply their own defaults.
+
+    Parameters
+    ----------
+    user : dict, optional
+        Authenticated user. Populated by auth middleware when configured;
+        absent in unauthenticated deployments. Shape is auth-backend-defined
+        but should at minimum contain ``"id"`` and ``"email"`` when present.
+        Cards filtering on identity must handle the missing case.
+    locale : str, optional
+        BCP-47 language tag (e.g. ``"en"``, ``"de-CH"``). Drives number
+        and date formatting in cards. Defaults to ``"en"`` when absent.
+    page_filters : dict, optional
+        Page-scoped filter state (e.g. ``{"date_range": [...], "division": "EMEA"}``).
+        Set by the page, not the card. Cards must not write here. Currently
+        always absent — reserved for a future filter-bar feature.
+    request_id : str, optional
+        Opaque correlation id for tracing one user request across logs and
+        downstream service calls. Cards should propagate it on outbound HTTP.
+
+    Notes
+    -----
+    Cards must read defensively::
+
+        def render(context: RenderContext):
+            user = context.get("user") or {}
+            locale = context.get("locale", "en")
+
+    Reading ``context["user"]`` directly will raise ``KeyError`` in
+    deployments without auth.
+    """
+
+    user: NotRequired[dict]
+    locale: NotRequired[str]
+    page_filters: NotRequired[dict]
+    request_id: NotRequired[str]
+
+
+class RenderContext(TypedDict):
+    """Per-render context passed to every :meth:`Card.render` call.
+
+    A frozen contract. Adding fields is forward-compatible; removing or
+    renaming fields breaks every team that has read them. All fields are
+    ``NotRequired`` so the cockpit can omit any it cannot supply (e.g.
+    ``user`` before auth is wired); cards must treat every key as optional
+    and supply their own defaults.
+
+    Parameters
+    ----------
+    user : dict, optional
+        Authenticated user. Populated by auth middleware when configured;
+        absent in unauthenticated deployments. Shape is auth-backend-defined
+        but should at minimum contain ``"id"`` and ``"email"`` when present.
+        Cards filtering on identity must handle the missing case.
+    locale : str, optional
+        BCP-47 language tag (e.g. ``"en"``, ``"de-CH"``). Drives number
+        and date formatting in cards. Defaults to ``"en"`` when absent.
+    page_filters : dict, optional
+        Page-scoped filter state (e.g. ``{"date_range": [...], "division": "EMEA"}``).
+        Set by the page, not the card. Cards must not write here. Currently
+        always absent — reserved for a future filter-bar feature.
+    request_id : str, optional
+        Opaque correlation id for tracing one user request across logs and
+        downstream service calls. Cards should propagate it on outbound HTTP.
+
+    Notes
+    -----
+    Cards must read defensively::
+
+        def render(context: RenderContext):
+            user = context.get("user") or {}
+            locale = context.get("locale", "en")
+
+    Reading ``context["user"]`` directly will raise ``KeyError`` in
+    deployments without auth.
+    """
+
+    user: NotRequired[dict]
+    locale: NotRequired[str]
+    page_filters: NotRequired[dict]
+    request_id: NotRequired[str]
+
+
 class CardMeta(TypedDict):
     """Metadata every card must declare on its ``CARD_META`` attribute.
 
@@ -113,20 +203,22 @@ class Card(Protocol):
 
     CARD_META: CardMeta
 
-    def render(self, context: dict) -> "Component":
+    def render(self, context: "RenderContext") -> "Component":
         """Return the card's Dash component.
 
         Parameters
         ----------
-        context : dict
-            Per-render context (e.g. user, locale, page filters). Cockpit
-            currently passes an empty dict; reserved for future use.
+        context : RenderContext
+            Per-render context. See :class:`RenderContext` for the field
+            contract. All fields are optional; read defensively with
+            ``context.get("locale", "en")``.
 
         Returns
         -------
         Component
-            Any Dash component. The cockpit wraps the result in an error
-            boundary, so raising here renders an error placeholder rather
-            than breaking the page.
+            Any Dash component (the body only — the cockpit draws chrome
+            around it). The cockpit wraps the result in an error boundary,
+            so raising here renders an error placeholder rather than
+            breaking the page.
         """
         ...

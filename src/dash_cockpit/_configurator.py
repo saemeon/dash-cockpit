@@ -17,7 +17,7 @@ This module owns three things:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     import dash
     from dash.development.base_component import Component
 
+    from dash_cockpit._card import RenderContext
     from dash_cockpit._page import ConfiguratorPage
     from dash_cockpit._presets import PresetStore
     from dash_cockpit._registry import CardRegistry
@@ -205,7 +206,7 @@ def instantiate_working_list(
     return cards
 
 
-def _render_card_tile(card: Any, context: dict) -> Component:
+def _render_card_tile(card: Any, context: RenderContext) -> Component:
     """Render a single working-list card via the shared chrome, with a Remove item.
 
     Returns a bare component (no column wrapper) — packing is the caller's job.
@@ -227,7 +228,7 @@ def _render_card_tile(card: Any, context: dict) -> Component:
 
 
 def render_working_list(
-    cards: list[Any], columns: int = 12, context: dict | None = None
+    cards: list[Any], columns: int = 12, context: RenderContext | None = None
 ) -> Component:
     """Render the working list of cards as a draggable grid with ⋮ menus.
 
@@ -237,8 +238,9 @@ def render_working_list(
         Live card objects. Empty list renders a hint placeholder.
     columns : int, optional
         Grid width in widget units. By default ``2``.
-    context : dict, optional
-        Render context forwarded to each card. By default ``None``.
+    context : RenderContext, optional
+        Render context forwarded to each card. See
+        :class:`~dash_cockpit._card.RenderContext`. By default ``None``.
 
     Returns
     -------
@@ -395,6 +397,7 @@ def register_configurator_callbacks(
     app: dash.Dash,
     registry: CardRegistry,
     preset_store: PresetStore | None = None,
+    context_provider: Callable[[], RenderContext] | None = None,
 ) -> None:
     """Wire all callbacks needed by :class:`ConfiguratorPage` rendering.
 
@@ -546,7 +549,8 @@ def register_configurator_callbacks(
     )
     def _render_pane(working, columns):
         cards = instantiate_working_list(working or [], registry)
-        return render_working_list(cards, columns=columns or 12)
+        ctx = context_provider() if context_provider is not None else None
+        return render_working_list(cards, columns=columns or 12, context=ctx)
 
     # URL hydration — seed the working list from ?b=<base64> or
     # ?preset=<group>/<name> on first load. Empty-only seeding: if the user

@@ -19,6 +19,37 @@ def test_cockpit_app_server_not_none(make_card):
     assert app.server is not None
 
 
+def test_build_render_context_outside_request_is_empty(make_card):
+    # No active Flask request → no headers / no flask.g / no auth user.
+    # Cards must still receive a dict (not None), and reading via .get()
+    # must not raise — every field is documented as NotRequired.
+    app = _make_app(make_card)
+    ctx = app._build_render_context()
+    assert ctx == {}
+
+
+def test_build_render_context_inside_request(make_card):
+    # When wrapped in a Flask request context, locale comes from
+    # Accept-Language, request_id comes from X-Request-ID, user comes
+    # from flask.g.cockpit_user (set by future auth middleware).
+    app = _make_app(make_card)
+    flask_app = app.server
+    with flask_app.test_request_context(
+        "/finance",
+        headers={
+            "Accept-Language": "de-CH,de;q=0.9",
+            "X-Request-ID": "abc-123",
+        },
+    ):
+        from flask import g
+
+        g.cockpit_user = {"id": "u1", "email": "u@example.com"}
+        ctx = app._build_render_context()
+    assert ctx["locale"] == "de-CH"
+    assert ctx["request_id"] == "abc-123"
+    assert ctx["user"] == {"id": "u1", "email": "u@example.com"}
+
+
 def test_cockpit_app_property(make_card):
     app = _make_app(make_card)
     assert isinstance(app.app, dash.Dash)

@@ -16,6 +16,7 @@ from dash_cockpit._refresh import wrap_for_refresh
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
+    from dash_cockpit._card import RenderContext
     from dash_cockpit._presets import PresetStore
     from dash_cockpit._registry import CardRegistry
 
@@ -33,7 +34,9 @@ def _card_size(card_id: str, registry: CardRegistry) -> tuple[int, int]:
     return (max(1, int(w)), max(1, int(h)))
 
 
-def _resolve_card(card_id: str, registry: CardRegistry, context: dict) -> Component:
+def _resolve_card(
+    card_id: str, registry: CardRegistry, context: RenderContext
+) -> Component:
     """Resolve and render one card, wrap in chrome, or warn if unknown."""
     try:
         entry = registry.get(card_id)
@@ -71,14 +74,14 @@ class _CardShim:
         self.CARD_META = meta
         self._render_fn = render_fn
 
-    def render(self, context: dict) -> Component:
+    def render(self, context: RenderContext) -> Component:
         return self._render_fn(context)
 
 
 def render_page(
     page: Page,
     registry: CardRegistry,
-    context: dict | None = None,
+    context: RenderContext | None = None,
     *,
     preset_store: PresetStore | None = None,
 ) -> Component:
@@ -99,9 +102,10 @@ def render_page(
         The page to render.
     registry : CardRegistry
         Registry used to resolve card IDs and read ``CARD_META``.
-    context : dict, optional
+    context : RenderContext, optional
         Render context passed to each card's ``render``. Treated as ``{}``
-        when ``None``. By default ``None``.
+        when ``None``. See :class:`~dash_cockpit._card.RenderContext`. By
+        default ``None``.
     preset_store : PresetStore, optional
         Forwarded to :func:`render_configurator` for ``ConfiguratorPage``.
         Ignored for other page types. By default ``None``.

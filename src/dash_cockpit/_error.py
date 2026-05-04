@@ -9,10 +9,10 @@ from dash import html
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
-    from dash_cockpit._card import Card
+    from dash_cockpit._card import Card, RenderContext
 
 
-def error_boundary(card: Card, context: dict) -> Component:
+def error_boundary(card: Card, context: RenderContext) -> Component:
     """Render a card, returning an error placeholder if it raises.
 
     This is the cockpit's failure-isolation primitive. A bad card surfaces
@@ -22,8 +22,8 @@ def error_boundary(card: Card, context: dict) -> Component:
     ----------
     card : Card
         Any object satisfying the :class:`Card` protocol.
-    context : dict
-        Render context forwarded to ``card.render``. Currently always empty.
+    context : RenderContext
+        Render context forwarded to ``card.render``. See :class:`RenderContext`.
 
     Returns
     -------

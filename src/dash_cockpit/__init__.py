@@ -22,7 +22,7 @@ import os as _os
 _os.environ.setdefault("REACT_VERSION", "18.2.0")
 
 from dash_cockpit._app import CockpitApp
-from dash_cockpit._card import Card, CardMeta
+from dash_cockpit._card import Card, CardMeta, RenderContext
 from dash_cockpit._export import (
     CardExportEntry,
     ChartCard,
@@ -60,6 +60,7 @@ __all__ = [
     "CARD_NO_DRAG_CLASS",
     "Card",
     "CardMeta",
+    "RenderContext",
     # Templates
     "CardTemplate",
     "ParameterSpec",

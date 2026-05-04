@@ -93,6 +93,16 @@ Today the cockpit is an in-process Dash app. For real corporate deployment we ne
 
 These are not deep design issues — they're "set up the boring infrastructure" tasks. Bundle into one phase when the cockpit is deployed in anger.
 
+### M5.5 — Port from `dash-bootstrap-components` to `dash-mantine-components`
+
+The cockpit shell is hand-rolled flexbox in [_app.py](src/dash_cockpit/_app.py) and hand-rolled CSS in [_chrome.py](src/dash_cockpit/_chrome.py); collapsible sidebar, settings drawer, and notifications are all DIY. `dmc.AppShell` ships a real layout primitive (collapsible navbar + header + main + footer), `dmc.Card` / `dmc.Menu` replace the chrome CSS, `dmc.Modal` replaces `dbc.Modal`, and Mantine's defaults are visually nicer than Bootstrap's.
+
+**Scope:** wholesale, not piecemeal. Mixing `dbc.Button` next to `dmc.Button` looks off and produces theme drift. Touched modules: `_app.py` (shell + sidebar + export modal), `_chrome.py` (card frame + ⋮ menu), `_configurator.py` (form inputs, save modal, status pills), `_packing.py` (only the wrapper Divs — `dash-snap-grid` is library-agnostic).
+
+**Why later:** the cockpit isn't customer-facing yet, the API is still moving (M3, M5 will both touch the shell), and a wholesale rewrite under a moving API doubles the work. Do it once, all at once, after the API has stabilised and before opening up to teams.
+
+**Defers:** sidebar collapse, settings drawer for `Card.render_settings()` (M3), notification toasts. All come for free with `AppShell` + `dmc.Notifications`.
+
 ### M6 — Documentation & gallery
 
 The styleguide expects:
@@ -126,21 +136,11 @@ We decided **not** to adopt CardCanvas as our foundation. Now that the cockpit i
 
 These aren't features so much as load-bearing decisions that affect everything downstream. Resolving them now prevents painful rewrites later.
 
-### 1. The render context dict
+### 1. The render context dict — ✅ resolved (Phase 4.8)
 
-`Card.render(self, context: dict)` — `context` is currently always `{}`. Before any team builds against it, define what it contains.
+`RenderContext` is a `TypedDict` in [src/dash_cockpit/_card.py](src/dash_cockpit/_card.py) with four `NotRequired` fields: `user`, `locale`, `page_filters`, `request_id`. `CockpitApp._build_render_context()` populates them per request from Flask state (`Accept-Language` header, `X-Request-ID` header, `flask.g.cockpit_user`). Cards must read defensively — `context.get("locale", "en")`, never `context["locale"]`. Documented in the README "The `context` argument" section.
 
-**Proposal:**
-
-```python
-class RenderContext(TypedDict):
-    user: NotRequired[dict]          # auth user, set by middleware
-    locale: NotRequired[str]         # "en", "de", etc.
-    page_filters: NotRequired[dict]  # date range, division — page-scoped, not card-scoped
-    request_id: NotRequired[str]     # for logging correlation
-```
-
-Once a team reads `context["user"]`, we cannot reshape it. Pin this before any team builds against `context`.
+`page_filters` is reserved (no filter bar yet); `user` requires auth middleware to set `flask.g.cockpit_user` (Phase M5). Adding new fields is forward-compatible; renaming or removing a field breaks every team.
 
 ### 2. Card identity stability
 

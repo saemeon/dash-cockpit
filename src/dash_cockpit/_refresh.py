@@ -113,7 +113,11 @@ def wrap_for_refresh(
     return body
 
 
-def register_refresh_callbacks(app, registry: CardRegistry) -> None:
+def register_refresh_callbacks(
+    app,
+    registry: CardRegistry,
+    context_provider=None,
+) -> None:
     """Register the pattern-matching callback that re-renders cards on tick.
 
     One callback handles every refreshable card via ``MATCH`` on the
@@ -165,4 +169,5 @@ def register_refresh_callbacks(app, registry: CardRegistry) -> None:
         from dash_cockpit._layout import _CardShim
 
         card_obj = _CardShim(entry["render"], entry["meta"])
-        return error_boundary(card_obj, {})
+        ctx = context_provider() if context_provider is not None else {}
+        return error_boundary(card_obj, ctx)

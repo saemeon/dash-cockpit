@@ -77,12 +77,34 @@ CARD_META = {
     "size": (2, 1),                     # optional: 2 cols × 1 row in grid units
 }
 
-def render(context: dict):
+def render(context: RenderContext):
     # fetch your own data here, return the body content
     return html.Div("$12.4M ▲ 3.2%")
 ```
 
 The cockpit guarantees the body container fills its grid cell vertically and scrolls when content overflows. Don't render your own border, title, or `padding: 16px` — that fights the chrome and produces double-frames.
+
+### The `context` argument
+
+`context` is a `RenderContext` — a `TypedDict` the cockpit assembles per request. Every field is **optional**; cards must read defensively:
+
+```python
+def render(context: RenderContext):
+    user = context.get("user") or {}
+    locale = context.get("locale", "en")
+    request_id = context.get("request_id")
+```
+
+Fields:
+
+| key | populated by | typical values |
+|---|---|---|
+| `user` | auth middleware (sets `flask.g.cockpit_user`) | `{"id": "u1", "email": "..."}` — absent in unauthenticated deploys |
+| `locale` | browser `Accept-Language` header | `"en"`, `"de-CH"` — fall back to `"en"` |
+| `page_filters` | reserved for future page-level filter bar | absent today |
+| `request_id` | `X-Request-ID` header or middleware-set `flask.g.cockpit_request_id` | opaque string, propagate on outbound calls |
+
+This is a **frozen contract**. Adding new fields is forward-compatible; renaming or removing one breaks every card. Lock teams to the dict, not specific keys: `context["user"]` must use `.get(...)`.
 
 ### What's allowed inside a card
 

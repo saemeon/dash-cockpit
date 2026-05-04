@@ -130,6 +130,11 @@ Pages are N-column widget grids:
   - **`CockpitApp(content_max_width=1600)`.** Page-content area is capped (default 1600px) and centered, preventing card spread on ultra-wide monitors. `content_max_width=None` opts out (legacy `flex: 1` behaviour).
   - Grid margins tightened from `[10, 10]` to `[6, 6]` for a denser look.
   - Named-size vocabulary (`"small" / "wide" / "tall" / "medium" / ...`) is **not** shipped yet; deferred pending real usage signals (see `RESEARCH_NOTES.md` "Card sizing — options for later evaluation").
+- **Phase 4.8 — `RenderContext` shape pinned (ROADMAP pin-down #1):** ✅ shipped.
+  - New `RenderContext` `TypedDict` in `_card.py` with four `NotRequired` fields: `user`, `locale`, `page_filters`, `request_id`. Frozen contract — adding fields is forward-compatible, renaming or removing any breaks every team.
+  - `CockpitApp._build_render_context()` assembles the dict per request from Flask state: `Accept-Language` → `locale`, `X-Request-ID` (or `flask.g.cockpit_request_id`) → `request_id`, `flask.g.cockpit_user` → `user`. Outside a request context (tests, scripts) returns `{}`.
+  - Threaded through every `Card.render` call site: `_app` → `render_page` (page-load callback) and `register_configurator_callbacks` (working-list re-render callback) and `register_refresh_callbacks` (per-card interval callback).
+  - Cards must read defensively (`context.get("locale", "en")`); reading `context["user"]` directly raises `KeyError` in unauthenticated deployments. Documented in README "The `context` argument".
 - **Phase 5 (next, optional):** `Card.render_settings()` for runtime per-card settings (cardcanvas-style settings drawer — see RESEARCH_NOTES Tier 2.1), drag-from-palette flow, layout snapshotting in presets, preset delete UI.
 
 ## Known limitations / honest caveats

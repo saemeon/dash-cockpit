@@ -204,12 +204,15 @@ class CockpitApp:
         register_layout_callbacks(self._app)
         register_edit_mode_callbacks(self._app)
         register_square_cell_callbacks(self._app)
-        register_refresh_callbacks(self._app, self._registry)
+        register_refresh_callbacks(
+            self._app, self._registry, self._build_render_context
+        )
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(
                 self._app,
                 self._registry,
                 preset_store=self._preset_store,
+                context_provider=self._build_render_context,
             )
 
     def _build_sidebar(self) -> html.Div:
@@ -339,6 +342,34 @@ class CockpitApp:
             return page
         return self._pages[0]
 
+    def _build_render_context(self) -> dict:
+        """Assemble the per-request :class:`RenderContext` for cards.
+
+        Reads Flask's request-scoped state (``flask.g``, ``flask.request``)
+        so cards see ``locale`` from the ``Accept-Language`` header and a
+        ``request_id`` for log correlation. ``user`` is reserved for auth
+        middleware to set on ``flask.g.cockpit_user``; absent today.
+        Subclasses (or future ``CockpitConfig``) can override.
+        """
+        from flask import g, has_request_context, request
+
+        ctx: dict = {}
+        if not has_request_context():
+            return ctx
+        user = getattr(g, "cockpit_user", None)
+        if user is not None:
+            ctx["user"] = user
+        accept = request.accept_languages.best
+        if accept:
+            ctx["locale"] = accept
+        req_id = (
+            request.headers.get("X-Request-ID")
+            or getattr(g, "cockpit_request_id", None)
+        )
+        if req_id:
+            ctx["request_id"] = req_id
+        return ctx
+
     def _register_callbacks(self) -> None:
         @self._app.callback(
             Output(PAGE_CONTENT_ID, "children"),
@@ -349,7 +380,10 @@ class CockpitApp:
             if page is None:
                 return html.P("No pages configured.")
             return render_page(
-                page, self._registry, preset_store=self._preset_store
+                page,
+                self._registry,
+                context=self._build_render_context(),
+                preset_store=self._preset_store,
             )
 
         if not self._export_backends:
