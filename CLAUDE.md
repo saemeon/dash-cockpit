@@ -115,7 +115,13 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - `CockpitApp._build_render_context()` assembles the dict per request from Flask state: `Accept-Language` → `locale`, `X-Request-ID` (or `flask.g.cockpit_request_id`) → `request_id`, `flask.g.cockpit_user` → `user`. Outside a request context (tests, scripts) returns `{}`.
   - Threaded through every `Card.render` call site: `_app` → `render_page` (page-load callback) and `register_configurator_callbacks` (working-list re-render callback) and `register_refresh_callbacks` (per-card interval callback).
   - Cards must read defensively (`context.get("locale", "en")`); reading `context["user"]` directly raises `KeyError` in unauthenticated deployments. Documented in README "The `context` argument".
-- **Phase 5 (next, optional):** `Card.render_settings()` for runtime per-card settings (cardcanvas-style settings drawer — see RESEARCH_NOTES Tier 2.1), drag-from-palette flow, layout snapshotting in presets, preset delete UI.
+- **Phase 4.10 — Per-package import isolation (ROADMAP pin-down #7):** ✅ shipped.
+  - `CardRegistry.load_packages([...])` now wraps each `load_package` call in try/except; failures are recorded in `registry._failures` and surfaced via `registry.failures()` (snapshot, not live).
+  - `warnings.warn` fires at startup with a `RuntimeWarning` for each failed package, naming the package + the original exception text — visible in console without programmatic access.
+  - Cards from a failed package are simply absent; pages referencing them fall through to the existing "Unknown card" warning tile (one-level-up of the per-card error-boundary pattern, no new failure surface).
+  - `load_packages(strict=True)` re-raises on the first failure (matches pre-#7 behaviour); useful in tests and CI.
+  - `load_package` (single-package) still raises directly — the multi-package method owns the isolation policy.
+- **Phase 5 (next, optional):** drag-from-palette flow, layout snapshotting in presets, preset delete UI.
 
 ## Known limitations / honest caveats
 
@@ -123,7 +129,6 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
 - **Live callbacks are not unit-test covered.** Pure helpers and the rendered component tree are covered; configurator and layout-persistence callbacks need a running Dash app to exercise. A Selenium/integration smoke test is the next step.
 - **No export-format validation.** A backend handed a page with no compatible cards is responsible for handling it (the demo writes a `README.txt`). A more opinionated cockpit would gray out incompatible formats in the modal.
 - **No render timeout / payload size limit.** A card that runs forever or returns 10 MB of DOM has no per-card budget. Pin-down #6 covers the design.
-- **Team package imports are not isolated.** `CardRegistry.load_packages([...])` imports arbitrary Python; a buggy team can crash startup. Pin-down #7 covers the fix (try/except per package + "broken team" placeholder).
 
 ---
 

@@ -41,6 +41,7 @@ class CardRegistry:
     def __init__(self) -> None:
         self._registry: dict[str, dict[str, Any]] = {}
         self._templates: dict[str, CardTemplate] = {}
+        self._failures: dict[str, str] = {}
 
     def register(self, card: Card) -> None:
         """Add a single card to the registry.
@@ -126,17 +127,60 @@ class CardRegistry:
                 self.register_template(tpl)
         return ids
 
-    def load_packages(self, package_names: list[str]) -> None:
-        """Load several team packages in order.
+    def load_packages(
+        self, package_names: list[str], *, strict: bool = False
+    ) -> None:
+        """Load several team packages in order, isolating per-package failures.
+
+        Pin-down #7 — package import isolation. A buggy team package must not
+        crash cockpit startup; failures are recorded in :attr:`_failures` and
+        surfaced via :meth:`failures` so the cockpit (or operator dashboards)
+        can show a "broken team" indicator. Cards from a failed package are
+        simply absent from the registry, so any page referencing them falls
+        through to the existing "Unknown card" warning tile.
 
         Parameters
         ----------
         package_names : list[str]
-            Importable package names. Loading is left-to-right; the first
-            failure aborts and propagates.
+            Importable package names. Loading is left-to-right; one
+            package's failure does not abort the others.
+        strict : bool, optional
+            When ``True``, the first failure re-raises (matches the
+            pre-#7 behaviour). Useful in tests or CI where startup
+            issues should fail loud. By default ``False``.
+
+        Notes
+        -----
+        Each failure is also reported via :func:`warnings.warn` so it
+        appears in the console at startup even if the operator never
+        consults :meth:`failures` programmatically.
         """
+        import warnings
+
         for name in package_names:
-            self.load_package(name)
+            try:
+                self.load_package(name)
+            except Exception as e:  # noqa: BLE001 - surface every failure uniformly
+                if strict:
+                    raise
+                self._failures[name] = f"{type(e).__name__}: {e}"
+                warnings.warn(
+                    f"Cockpit team package {name!r} failed to load: {e}. "
+                    "Cards from this package will be absent; pages referencing "
+                    "them render an 'Unknown card' tile.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+    def failures(self) -> dict[str, str]:
+        """Return ``{package_name: error_message}`` for any failed package loads.
+
+        Empty when every package loaded cleanly. Populated only by
+        :meth:`load_packages` (with default ``strict=False``); :meth:`load_package`
+        still raises directly. Snapshot — not a live view; mutations are not
+        reflected back in the registry.
+        """
+        return dict(self._failures)
 
     def get(self, card_id: str) -> dict[str, Any]:
         """Look up a card entry by id.

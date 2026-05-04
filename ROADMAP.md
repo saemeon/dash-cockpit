@@ -10,7 +10,7 @@ This document is an honest picture of where the cockpit stands, what's still rou
 
 - **Core protocol.** `Card` (`runtime_checkable`) + `CardMeta` (TypedDict, validated at registration). `RenderContext` (TypedDict, all-optional, populated per request from Flask state — `Accept-Language` → `locale`, `X-Request-ID` → `request_id`, `flask.g.cockpit_user` → `user`).
 - **Three page types.** `TeamPage` (drag-drop grid), `UserPage` (fixed Bootstrap rows, no persistence), `ConfiguratorPage` (runtime composition).
-- **Multi-team registry.** `CardRegistry.load_packages([...])` with startup-time validation; failed-card error isolation via `error_boundary`.
+- **Multi-team registry.** `CardRegistry.load_packages([...])` with startup-time validation, failed-card error isolation via `error_boundary`, and **per-package import isolation** (pin-down #7) — one broken team package gets recorded in `registry.failures()` and `warnings.warn`'d at startup; other packages still load. `strict=True` opts back into fail-fast.
 - **Drag-drop + sizing.** `dash-snap-grid` (isolated in [_packing.py](src/dash_cockpit/_packing.py) so it can be swapped). 12-column raster, square unit cells (`rowHeight = column pixel width`), localStorage persistence per browser/page. `CockpitApp(content_max_width=1600)` caps + centers content on ultra-wide displays.
 - **Cockpit-owned card chrome.** `card_chrome(body, ...)` in [_chrome.py](src/dash_cockpit/_chrome.py): border, header with title + … menu, body container. Cards return *body only*.
 - **Tier 1 polish.** Edit-mode toggle (cards locked by default), per-card auto-refresh via `CARD_META["refresh_interval"]`, `dcc.Loading` spinner on every body, `CARD_NO_DRAG_CLASS`, configurable `resize_handles`.
@@ -21,7 +21,7 @@ This document is an honest picture of where the cockpit stands, what's still rou
 - **Card surfaces — body / settings / actions (M3).** `Card.render(context)` may return either a bare `Component` (legacy, treated as body-only) or a slot dict `{"body": ..., "settings": ..., "actions": {...}}`. The cockpit auto-injects three standard … items via `card_chrome`: **Refresh** (always — re-renders body via the M2 path), **About** (always — opens an app-level modal with title + description + team + optional `deep_link`), **Settings** (only when render returned a `settings` slot — opens a right-edge `dbc.Offcanvas` whose body is the re-rendered settings panel). Custom actions appear above standard items separated by a divider. `CARD_META["actions"]` stays valid as a static default.
 - **Demo app.** `examples/demo_cockpit/` with three teams (`team_finance`, `team_ops`, `team_sizes`); the **Size Sampler page** renders one tile per `(w, h)` from `1×1` up to `12×4` for visual size reference.
 
-**Tested:** 218 tests, ~77% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing, and `RenderContext` assembly are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only — Selenium/integration coverage is the next gap.
+**Tested:** 223 tests, ~77% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing, and `RenderContext` assembly are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only — Selenium/integration coverage is the next gap.
 
 ---
 
@@ -146,14 +146,11 @@ Today: a card that raises gets a red error tile. That's the right default. But:
 - A dev-mode component-size warning in the browser console.
 - A circuit breaker: if a card has failed 3 times in 5 minutes, stop rendering it for 1 minute. Surfaces in monitoring before users notice.
 
-### 7. Plugin discovery and trust
+### 7. Plugin discovery and trust — ✅ resolved (Phase 4.10)
 
-`CardRegistry.load_packages([...])` imports arbitrary Python — there's no isolation. A buggy team package can crash the cockpit at startup.
+`CardRegistry.load_packages([...])` now isolates per-package failures: a buggy team's `ImportError` / `RegistryError` / `get_cards()` crash is caught, recorded in `_failures`, surfaced via `warnings.warn` at startup and `registry.failures()` programmatically. Other packages continue loading. Cards from a failed package are absent from the registry, so any page referencing them falls through to the existing "Unknown card" warning tile — same one-level-up of the per-card error-boundary pattern. `strict=True` opts back into fail-fast for tests / CI.
 
-**Pin down:**
-
-- Each package should load in a try/except at startup, with a "broken team" placeholder rendered for affected pages (matches the per-card failure pattern, one level up).
-- Long term: consider a subprocess-per-team architecture for hard isolation. Probably overkill for now.
+Subprocess-per-team isolation remains deferred — premature given typical deployments.
 
 ### 8. Configuration surface
 
@@ -195,7 +192,7 @@ class CockpitConfig:
 | **`RenderContext` shape locked** | ✅ | Pin-down #1 (`user`, `locale`, `page_filters`, `request_id`) |
 | **Robust to bad cards** | ✅ | Error boundary, isolation by design. |
 | **Robust to slow cards** | ❌ | Render timeout — pin down #6 |
-| **Robust to bad team packages** | ⏳ | Startup try/except — pin down #7 |
+| **Robust to bad team packages** | ✅ | Pin-down #7 (per-package try/except in `load_packages`, failures via `registry.failures()`) |
 | **Robust to layout schema drift** | ⏳ | Version + migration — pin down #5 |
 | **Versionable cards/templates** | ⏳ | Convention + alias mechanism — pin down #2, #3 |
 
@@ -203,10 +200,9 @@ class CockpitConfig:
 
 ## Recommended next-session focus
 
-Pin-down #1 (`RenderContext`) is now resolved. The remaining "free now, expensive later" decisions:
+Pin-downs #1 and #7 are resolved. The remaining "free now, expensive later" decisions:
 
 1. **Pin-down #2 — card-id namespacing.** Agree on `<team>:<card>` IDs (e.g. `finance:revenue_trend`) + `CARD_META["aliases"]: list[str]` for renames *before* any card ID gets baked into a saved layout. Includes migrating the demo IDs and adding alias resolution in `CardRegistry`. ~1 hour.
 2. **Pin-down #5 — layout-state versioning.** Stamp `{"version": 1, "layout": [...]}` into `localStorage` and add a migration hook in `_packing.py` restore. Cheap to add now, brittle to retrofit once user layouts exist in the wild.
-3. **Pin-down #7 — package-import isolation.** Wrap each `CardRegistry.load_packages` import in try/except so a broken team renders a "broken team" placeholder instead of crashing startup. One-level-up of the existing per-card error boundary.
 
 Defer M4 (`dash-fn-form` swap), M5 (auth/logging/caching), M5.5 (Mantine port), M6 (MkDocs) until the cockpit is deployed in anger. Premature investment there is a recipe for rewriting good infrastructure for fictional needs — and M5.5 in particular wants the API to stop moving first.
