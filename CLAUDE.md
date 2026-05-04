@@ -100,6 +100,16 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - **`CockpitApp(content_max_width=1600)`.** Page-content area is capped (default 1600px) and centered, preventing card spread on ultra-wide monitors. `content_max_width=None` opts out (legacy `flex: 1` behaviour).
   - Grid margins tightened from `[10, 10]` to `[6, 6]` for a denser look.
   - Named-size vocabulary (`"small" / "wide" / "tall" / "medium" / ...`) is **not** shipped yet; deferred pending real usage signals (see `RESEARCH_NOTES.md` "Card sizing — options for later evaluation").
+- **Phase 4.9 — Slot-dict render + standard ⋮ actions (M3):** ✅ shipped.
+  - `Card.render(context)` may return either a bare `Component` (legacy, treated as `{"body": Component}`) or a slot dict: `{"body": Component, "settings": Component, "actions": dict}`. Body is required; settings and actions are optional.
+  - New helper `unwrap_render_result` in `_card.py` does the dispatch; `error_boundary` now returns `(body, settings, actions)` so every render call site (`_layout`, `_configurator`, `_refresh`) handles the three surfaces uniformly.
+  - **Action shape unified.** `_chrome._normalise_actions` accepts either the legacy `CARD_META["actions"]` list (`[{id, label}, ...]`) or the new render-time dict (`{id: str | {label, ...extras}}`). String value = label shorthand; dict value carries `label` plus extras (`href`, `disabled`).
+  - **Three standard ⋮ items auto-injected by `card_chrome`** (reserved IDs `_refresh`, `_about`, `_settings`):
+    - **Refresh** — always present. Re-renders the card body via `register_refresh_callbacks`'s click handler (parallel `Input` to the M2 auto-refresh tick, sharing one render path).
+    - **About** — always present. Opens an app-level `dbc.Modal` populated with `CARD_META["title"]` + `description` + `team` + optional `deep_link`. One modal serves every card.
+    - **Settings** — appears iff the card returned a `settings` slot. Opens an app-level `dbc.Offcanvas` (right edge); the click callback re-calls `render(context)` and extracts the `settings` slot, avoiding duplicate-ID conflicts that twin-rendering would cause.
+  - Custom actions appear above the standard items, separated by a divider; `extra_menu_items` (e.g. configurator's "Remove") follow another divider.
+  - Backwards-compat: existing bare-Component cards keep working unchanged. `CARD_META["actions"]` stays valid as the static default; render-time `actions` dict overrides it.
 - **Phase 4.8 — `RenderContext` shape pinned (ROADMAP pin-down #1):** ✅ shipped.
   - New `RenderContext` `TypedDict` in `_card.py` with four `NotRequired` fields: `user`, `locale`, `page_filters`, `request_id`. Frozen contract — adding fields is forward-compatible, renaming or removing any breaks every team.
   - `CockpitApp._build_render_context()` assembles the dict per request from Flask state: `Accept-Language` → `locale`, `X-Request-ID` (or `flask.g.cockpit_request_id`) → `request_id`, `flask.g.cockpit_user` → `user`. Outside a request context (tests, scripts) returns `{}`.

@@ -64,10 +64,12 @@ class TestWrapForRefresh:
 
 
 class TestRegisterRefreshCallbacks:
-    def test_adds_one_callback(self):
+    def test_registers_tick_and_click_callbacks(self):
+        # Two pattern-matching callbacks: one for the dcc.Interval tick (M2
+        # auto-refresh) and one for the standard "_refresh" ⋮ action click.
         app = dash.Dash(__name__)
         registry = CardRegistry()
         before = len(app.callback_map)
         register_refresh_callbacks(app, registry)
         after = len(app.callback_map)
-        assert after - before == 1
+        assert after - before == 2

@@ -52,14 +52,20 @@ def _resolve_card(
         )
     meta = entry["meta"]
     card_obj = _CardShim(entry["render"], meta)
-    body = error_boundary(card_obj, context)
+    body, settings, actions_override = error_boundary(card_obj, context)
     refresh_interval = meta.get("refresh_interval", 0)
     body = wrap_for_refresh(body, card_id, refresh_interval)
+    # Render-time actions override CARD_META["actions"] when the card returns
+    # a slot dict with an "actions" key; otherwise the static default applies.
+    # The settings slot itself is discarded here — the drawer re-renders the
+    # card when the user opens it, so we only need to know *whether* there is
+    # one to decide on auto-injecting the Settings ⋮ item.
     return card_chrome(
         body,
         card_id=card_id,
         title=meta.get("title", ""),
-        actions=meta.get("actions"),
+        actions=actions_override if actions_override is not None else meta.get("actions"),
+        has_settings=settings is not None,
     )
 
 

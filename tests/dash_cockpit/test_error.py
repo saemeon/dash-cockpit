@@ -4,13 +4,19 @@ from dash_cockpit._error import _error_card, error_boundary
 
 
 def test_error_boundary_success(simple_card):
-    result = error_boundary(simple_card, {})
-    assert isinstance(result, html.Div)
+    body, settings, actions = error_boundary(simple_card, {})
+    assert isinstance(body, html.Div)
+    # Bare-Component cards return no settings or actions overrides.
+    assert settings is None
+    assert actions is None
 
 
 def test_error_boundary_isolates_failure(error_card):
-    result = error_boundary(error_card, {})
-    assert isinstance(result, html.Div)
+    body, settings, actions = error_boundary(error_card, {})
+    assert isinstance(body, html.Div)
+    # A failed render still returns no settings/actions — error tile in body slot.
+    assert settings is None
+    assert actions is None
 
 
 def test_error_card_contains_id():
@@ -27,5 +33,5 @@ def test_error_card_contains_message():
 
 def test_error_boundary_passes_context(simple_card):
     ctx = {"date": "2026-04-30"}
-    result = error_boundary(simple_card, ctx)
-    assert result is not None
+    body, _settings, _actions = error_boundary(simple_card, ctx)
+    assert body is not None

@@ -215,12 +215,16 @@ def _render_card_tile(card: Any, context: RenderContext) -> Component:
 
     cid = card.CARD_META["id"]
     refresh_interval = card.CARD_META.get("refresh_interval", 0)
-    body = wrap_for_refresh(error_boundary(card, context), cid, refresh_interval)
+    body, settings, actions_override = error_boundary(card, context)
+    body = wrap_for_refresh(body, cid, refresh_interval)
     return card_chrome(
         body,
         card_id=cid,
         title=card.CARD_META.get("title", ""),
-        actions=card.CARD_META.get("actions"),
+        actions=actions_override
+        if actions_override is not None
+        else card.CARD_META.get("actions"),
+        has_settings=settings is not None,
         extra_menu_items=[
             dbc.DropdownMenuItem("Remove", id=remove_btn_id(cid), n_clicks=0)
         ],

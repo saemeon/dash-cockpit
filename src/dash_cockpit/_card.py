@@ -203,8 +203,16 @@ class Card(Protocol):
 
     CARD_META: CardMeta
 
-    def render(self, context: "RenderContext") -> "Component":
-        """Return the card's Dash component.
+    def render(self, context: "RenderContext") -> "Component | dict":
+        """Return the card's Dash component, or a slot dict.
+
+        Two return shapes are supported:
+
+        - **Bare ``Component``** — shorthand for ``{"body": Component}``. The
+          historical shape; existing cards keep working unchanged.
+        - **Slot dict** — ``{"body": Component, "settings": Component, "actions": dict}``.
+          ``body`` is required; ``settings`` and ``actions`` are optional.
+          See :func:`unwrap_render_result`.
 
         Parameters
         ----------
@@ -215,10 +223,56 @@ class Card(Protocol):
 
         Returns
         -------
-        Component
-            Any Dash component (the body only — the cockpit draws chrome
-            around it). The cockpit wraps the result in an error boundary,
-            so raising here renders an error placeholder rather than
-            breaking the page.
+        Component or dict
+            The card's body, optionally with ``settings`` (drawer panel) and
+            ``actions`` (``⋮`` menu items overriding ``CARD_META["actions"]``).
         """
         ...
+
+
+def unwrap_render_result(
+    result: "Component | dict",
+) -> tuple["Component", "Component | None", "dict | None"]:
+    """Split a ``render`` return value into ``(body, settings, actions)``.
+
+    Cards may return either a bare component (legacy shape) or a slot dict.
+    This helper hides the branching so call sites in :mod:`_layout`,
+    :mod:`_configurator`, and :mod:`_refresh` can always treat the three
+    surfaces uniformly.
+
+    Parameters
+    ----------
+    result : Component or dict
+        Whatever ``card.render(context)`` returned. Bare components are
+        treated as ``{"body": result}``. Dict results must contain a
+        ``"body"`` key; ``"settings"`` and ``"actions"`` are optional.
+
+    Returns
+    -------
+    body : Component
+        The card body — placed in the grid cell by the cockpit.
+    settings : Component or None
+        Optional settings panel — opened in the side drawer when the user
+        clicks ``⋮`` → "Settings". ``None`` when the card has no settings.
+    actions : dict or None
+        Optional render-time override for ``CARD_META["actions"]``. ``None``
+        means "use the static default from CARD_META". An empty dict means
+        "no actions" (different from None).
+
+    Raises
+    ------
+    ValueError
+        If ``result`` is a dict missing the required ``"body"`` key.
+    """
+    if isinstance(result, dict):
+        if "body" not in result:
+            raise ValueError(
+                "Card.render returned a dict without a 'body' key; "
+                "include 'body': <Component> or return the Component directly."
+            )
+        return (
+            result["body"],
+            result.get("settings"),
+            result.get("actions"),
+        )
+    return (result, None, None)

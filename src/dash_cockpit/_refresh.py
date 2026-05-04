@@ -140,34 +140,73 @@ def register_refresh_callbacks(
     """
     from dash import MATCH, Input, Output
 
+    from dash_cockpit._chrome import STD_REFRESH
+
+    def _render_body_for(card_id: str) -> Component:
+        """Re-render one card body via the registry, share logic between triggers."""
+        try:
+            entry = registry.get(card_id)
+        except KeyError:
+            return html.Div(f"Unknown card: {card_id!r}")
+        from dash_cockpit._layout import _CardShim
+
+        card_obj = _CardShim(entry["render"], entry["meta"])
+        ctx = context_provider() if context_provider is not None else {}
+        body, _settings, _actions = error_boundary(card_obj, ctx)
+        # Refresh re-renders the body only — settings stays in the drawer
+        # until reopened; action overrides are static for this tick.
+        return body
+
     @app.callback(
         Output(card_body_id(MATCH), "children"),
         Input(card_interval_id(MATCH), "n_intervals"),
         prevent_initial_call=True,
     )
-    def _refresh_card(_n_intervals):
-        # Pattern-matching gives us the matched card_id via callback context.
+    def _refresh_card_tick(_n_intervals):
         from dash import callback_context
 
         ctx = callback_context
         if not ctx.triggered:
             return html.Div("(no trigger)")
-        # Trigger prop_id looks like '{"card_id":"foo","type":"_cockpit_card_interval"}.n_intervals'
         import json as _json
 
         try:
             trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
-            payload = _json.loads(trigger_id)
-            card_id = payload.get("card_id")
+            card_id = _json.loads(trigger_id).get("card_id")
         except (ValueError, KeyError, IndexError):
             return html.Div("(invalid trigger)")
+        return _render_body_for(card_id)
+
+    # Refresh ⋮ action click — pattern-matching on the standard "_refresh"
+    # action id auto-injected by ``card_chrome``. Re-uses the body re-render
+    # path so ticks and clicks behave identically.
+    @app.callback(
+        Output(card_body_id(MATCH), "children", allow_duplicate=True),
+        Input(
+            {
+                "type": "_cockpit_card_action",
+                "card_id": MATCH,
+                "action": STD_REFRESH,
+            },
+            "n_clicks",
+        ),
+        prevent_initial_call=True,
+    )
+    def _refresh_card_click(n_clicks):
+        if not n_clicks:
+            from dash import no_update
+
+            return no_update
+        from dash import callback_context
+
+        ctx = callback_context
+        if not ctx.triggered:
+            return html.Div("(no trigger)")
+        import json as _json
+
         try:
-            entry = registry.get(card_id)
-        except KeyError:
-            return html.Div(f"Unknown card: {card_id!r}")
-
-        from dash_cockpit._layout import _CardShim
-
-        card_obj = _CardShim(entry["render"], entry["meta"])
-        ctx = context_provider() if context_provider is not None else {}
-        return error_boundary(card_obj, ctx)
+            trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
+            card_id = _json.loads(trigger_id).get("card_id")
+        except (ValueError, KeyError, IndexError):
+            return html.Div("(invalid trigger)")
+        return _render_body_for(card_id)

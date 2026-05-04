@@ -84,6 +84,65 @@ def render(context: RenderContext):
 
 The cockpit guarantees the body container fills its grid cell vertically and scrolls when content overflows. Don't render your own border, title, or `padding: 16px` — that fights the chrome and produces double-frames.
 
+### Three card surfaces: body, settings, actions
+
+A card may return either a bare component (the body, as above) or a **slot dict** that expresses up to three surfaces in one return value:
+
+```python
+def render(context: RenderContext):
+    return {
+        "body": html.Div("$12.4M ▲ 3.2%"),                       # required
+        "settings": html.Div([                                   # optional — opens in side drawer
+            dcc.DatePickerRange(id="rev-range", ...),
+            dcc.Dropdown(id="rev-currency", options=[...]),
+        ]),
+        "actions": {                                             # optional — overrides CARD_META["actions"]
+            "export": "Export CSV",
+            "open": {"label": "Open in Finance app", "href": "/finance/"},
+        },
+    }
+```
+
+Rules:
+
+- Returning a bare `Component` still works (treated as `{"body": Component}`) — backwards-compat for the simple case.
+- `actions` value is either a string (= label) or a dict with `label` plus extras (`href`, `disabled`, …). One mental model, terse common case, no helper import.
+- `CARD_META["actions"]` stays as the **static default** — used when render doesn't return an `"actions"` key. Static cards stay declarative; dynamic cards override per render.
+- The cockpit places each surface: `body` in the grid cell, `settings` in a side drawer (opened from the ⋮ menu), `actions` in the ⋮ menu.
+
+### Standard ⋮ items the cockpit auto-injects
+
+Three menu items are always reasoned-about by the cockpit; you don't need to declare them:
+
+| Item | When it appears | What it does |
+|---|---|---|
+| **Refresh** | always | Re-renders the card body via the same path as the M2 auto-refresh tick. |
+| **About** | always | Opens an app-level modal showing `CARD_META["title"]` + `description` + `team` + (optional) `deep_link`. |
+| **Settings** | when `render` returned a `settings` slot | Opens an app-level side drawer holding the card's settings panel. |
+
+Custom `actions` appear above the standard items, separated by a divider. To get an "Open in team app" link surfaced via About, declare `CARD_META["deep_link"]: "<url>"`; the link appears in the About modal automatically.
+
+### Sharing state between body and settings
+
+Both surfaces are rendered by the same card, so callbacks just reference IDs — no `context["card_settings"]` plumbing:
+
+```python
+def render(context: RenderContext):
+    return {
+        "body": html.Div(dcc.Graph(id={"type": "rev-chart"})),
+        "settings": html.Div(dcc.Dropdown(id={"type": "rev-period"}, ...)),
+    }
+
+# Anywhere — top-level callbacks, in __init__.py, etc.
+@app.callback(
+    Output({"type": "rev-chart"}, "figure"),
+    Input({"type": "rev-period"}, "value"),
+)
+def _update(period): ...
+```
+
+The cockpit re-renders the settings panel each time the drawer opens, so settings DOM lives in one place at a time — no duplicate-ID issues from rendering it twice.
+
 ### The `context` argument
 
 `context` is a `RenderContext` — a `TypedDict` the cockpit assembles per request. Every field is **optional**; cards must read defensively:

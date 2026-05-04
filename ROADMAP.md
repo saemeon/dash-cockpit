@@ -18,56 +18,16 @@ This document is an honest picture of where the cockpit stands, what's still rou
 - **Export pipeline.** `TabularCard` / `DocumentCard` / `ChartCard` opt-in protocols, generic `ExportBackend`. Configurator-aware (exports the live working list, not the static `card_ids`).
 - **Preset library (M1).** Generic group-namespaced `Preset(name, group, entries, ...)`; `PresetStore` protocol; in-memory + filesystem implementations; three optional callable providers (visibility, writability, save target) with env-var defaults from `$COCKPIT_USER`. Seed presets are read-only and respect visibility. Layout snapshotting + delete UI deferred.
 - **Slug routing + shareable URLs (M1.5).** Pages at `/<slug>`; duplicates raise at startup. `?b=<base64>` (inline ad-hoc bundle) and `?preset=<group>/<name>` (deep-link via `PresetStore`). Share button copies `?b=` clientside. URL hydration is empty-only (never tramples edits) and silent on missing/invisible presets (no leak via URL probing).
+- **Card surfaces — body / settings / actions (M3).** `Card.render(context)` may return either a bare `Component` (legacy, treated as body-only) or a slot dict `{"body": ..., "settings": ..., "actions": {...}}`. The cockpit auto-injects three standard ⋮ items via `card_chrome`: **Refresh** (always — re-renders body via the M2 path), **About** (always — opens an app-level modal with title + description + team + optional `deep_link`), **Settings** (only when render returned a `settings` slot — opens a right-edge `dbc.Offcanvas` whose body is the re-rendered settings panel). Custom actions appear above standard items separated by a divider. `CARD_META["actions"]` stays valid as a static default.
 - **Demo app.** `examples/demo_cockpit/` with three teams (`team_finance`, `team_ops`, `team_sizes`); the **Size Sampler page** renders one tile per `(w, h)` from `1×1` up to `12×4` for visual size reference.
 
-**Tested:** 202 tests, 80% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing, and `RenderContext` assembly are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only — Selenium/integration coverage is the next gap.
+**Tested:** 218 tests, ~77% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing, and `RenderContext` assembly are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only — Selenium/integration coverage is the next gap.
 
 ---
 
 ## Future direction — milestones in priority order
 
-### M1 — Saved presets ("Bibliothek") — ✅ shipped
-
-Storage-agnostic `PresetStore` with `(group, name)` keying; in-memory and filesystem implementations. Group is an opaque namespace — deployment defines the taxonomy (`global`, `team:*`, `user:*`, …). Sidebar Load/Save UI on every `ConfiguratorPage`. See [_presets.py](dash-cockpit/src/dash_cockpit/_presets.py).
-
-**Design intent:** the cockpit owns no persistence policy. Visibility, writability, and the default save target are deployment concerns, injected as callables. The protocol stays user-agnostic; only implementations know about users.
-
-**Deferred:** layout snapshotting (the `Preset.layout` field exists but isn't populated on save); delete UI.
-
-### M1.5 — URL routing & shareable views — ✅ shipped
-
-Slug-based page routing (`/<page-slug>`) replaces int-index. Configurator working lists are shareable via two URL params, both `ConfiguratorPage`-only:
-
-```
-/<page-slug>?b=<base64-json>              # inline ad-hoc working list
-/<page-slug>?preset=<group>/<name>        # deep-link via PresetStore
-/<page-slug>?preset=<name>                # shorthand for group=""
-```
-
-See [_share.py](dash-cockpit/src/dash_cockpit/_share.py) for the codec, [_configurator.py](dash-cockpit/src/dash_cockpit/_configurator.py) for the URL hydration callback and Share button.
-
-**Design intent:**
-
-- **URL = initial state, not live binding.** Hydrates only an empty working list; user edits are never trampled by URL revisits. Share is an explicit button, not implicit on every change.
-- **Bundles and presets share one wire shape** (`list[{template_id, params}]`) and one consumer (the working-list store). The URL hydrator is shape-only — it doesn't know whether a bundle came from base64 or a preset name.
-- **Named bundles *are* presets.** No parallel storage abstraction; `?preset=` is just a URL surface on `PresetStore`.
-- **Silent on missing/invisible presets** — `KeyError` and `PermissionError` from the loader collapse to "no bundle". Never leak presence-vs-permission via URL probing.
-
-### M2 — Per-card refresh — ✅ shipped
-
-Cards declaring `CARD_META["refresh_interval"]` (seconds) are wrapped in their own `dcc.Interval`; one pattern-matching server callback re-renders each card on its own tick. `0` (default) disables. See [_refresh.py](dash-cockpit/src/dash_cockpit/_refresh.py).
-
-### M3 — Card actions plumbing
-
-Cards declare actions in `CARD_META["actions"]`; clicks fire pattern-matching events. **But:** the cockpit doesn't currently wire any handlers — teams have to register their own callbacks against the pattern-matching id. That's fine but needs documentation and a default for the common cases.
-
-**What to pin down:**
-
-- A standard "Refresh" action that triggers a render-cycle for that card (related to M2).
-- A standard "Open in team app" action that navigates to a deep link the card declares in `CARD_META["deep_link"]`.
-- An "About" action that opens a modal with `CARD_META["description"]` + team contact info.
-
-**Scope:** small. Each is a few callback lines.
+> M1, M1.5, M2, M3 — shipped. See "Where we are today" above and `CLAUDE.md` "Implementation status" for the per-phase detail.
 
 ### M4 — `dash-fn-form` for parameter rendering
 
@@ -94,9 +54,9 @@ The cockpit shell is hand-rolled flexbox in [_app.py](src/dash_cockpit/_app.py) 
 
 **Scope:** wholesale, not piecemeal. Mixing `dbc.Button` next to `dmc.Button` looks off and produces theme drift. Touched modules: `_app.py` (shell + sidebar + export modal), `_chrome.py` (card frame + ⋮ menu), `_configurator.py` (form inputs, save modal, status pills), `_packing.py` (only the wrapper Divs — `dash-snap-grid` is library-agnostic).
 
-**Why later:** the cockpit isn't customer-facing yet, the API is still moving (M3, M5 will both touch the shell), and a wholesale rewrite under a moving API doubles the work. Do it once, all at once, after the API has stabilised and before opening up to teams.
+**Why later:** the cockpit isn't customer-facing yet, the API is still moving (M5 will touch the shell for auth/branding), and a wholesale rewrite under a moving API doubles the work. Do it once, all at once, after the API has stabilised and before opening up to teams.
 
-**Defers:** sidebar collapse, settings drawer for `Card.render_settings()` (M3), notification toasts. All come for free with `AppShell` + `dmc.Notifications`.
+**Defers:** sidebar collapse, notification toasts, polished modal/drawer animations. All come for free with `AppShell` + `dmc.Notifications` + `dmc.Modal` + `dmc.Drawer`.
 
 ### M6 — Documentation & gallery
 
@@ -115,15 +75,13 @@ We decided **not** to adopt CardCanvas as our foundation. Now that the cockpit i
 
 | CardCanvas | Our equivalent | Verdict |
 |---|---|---|
-| `Card` ABC with `render()` + `render_settings()` | `Card` Protocol with `render()`; settings via `CardMeta.actions` + team callbacks | More flexible primitive — settings UI isn't coupled to the card class. |
+| `Card` ABC with `render()` + `render_settings()` | `Card` Protocol with `render()` returning slot dict `{body, settings, actions}` (M3) | One mental model — the same dict shape covers static, settings-bearing, and dynamic-action cards. |
 | Drag-drop grid (`dash-snap-grid`) | Same engine, isolated in [_packing.py](dash-cockpit/src/dash_cockpit/_packing.py) | Identical capability, less coupling. |
-| Per-card menus | `CardMeta.actions` | Ours is opt-in and pattern-matching-friendly. |
-| Settings drawer | None yet — addable as a card action that opens a modal | Open gap; small fix. |
+| Per-card menus | `CARD_META["actions"]` (static) or render-time `actions` slot (dynamic); plus auto-injected Refresh/About/Settings (M3) | Static + dynamic + cockpit-supplied standards in one menu. |
+| Settings drawer | App-level `dbc.Offcanvas`, auto-opened by Settings ⋮ when card returned a `settings` slot (M3) | Shipped. |
 | Share-by-URL | `?b=` and `?preset=` (M1.5) | Different shape: bundles of cards, not single cards. |
-| Auto-refresh `interval` | `CardMeta.refresh_interval` (M2) | Shipped. |
+| Auto-refresh `interval` | `CARD_META["refresh_interval"]` (M2) + manual Refresh ⋮ (M3) | Shipped. |
 | Card gallery / picker | `ConfiguratorPage` | Different model — we pick from templates, not card classes. |
-
-**The one CardCanvas pattern worth learning from:** `render_settings()`. Cards that need user-configurable runtime state (color, threshold, time window) deserve a first-class settings UI rather than "drop your own form into the card body" or "use a configurator template". An optional `Card.render_settings()` opened by a built-in `⋮` "Settings" action would close the gap in ~30 lines.
 
 ---
 
@@ -250,9 +208,5 @@ Pin-down #1 (`RenderContext`) is now resolved. The remaining "free now, expensiv
 1. **Pin-down #2 — card-id namespacing.** Agree on `<team>:<card>` IDs (e.g. `finance:revenue_trend`) + `CARD_META["aliases"]: list[str]` for renames *before* any card ID gets baked into a saved layout. Includes migrating the demo IDs and adding alias resolution in `CardRegistry`. ~1 hour.
 2. **Pin-down #5 — layout-state versioning.** Stamp `{"version": 1, "layout": [...]}` into `localStorage` and add a migration hook in `_packing.py` restore. Cheap to add now, brittle to retrofit once user layouts exist in the wild.
 3. **Pin-down #7 — package-import isolation.** Wrap each `CardRegistry.load_packages` import in try/except so a broken team renders a "broken team" placeholder instead of crashing startup. One-level-up of the existing per-card error boundary.
-
-Then ship something visible:
-
-4. **M3 — card actions plumbing.** Standard handlers for Refresh / Open-in-team-app / About declared via `CARD_META["actions"]`. Small, high-leverage for card authors. A `Card.render_settings()` settings drawer fits naturally as a fourth standard action.
 
 Defer M4 (`dash-fn-form` swap), M5 (auth/logging/caching), M5.5 (Mantine port), M6 (MkDocs) until the cockpit is deployed in anger. Premature investment there is a recipe for rewriting good infrastructure for fictional needs — and M5.5 in particular wants the API to stop moving first.

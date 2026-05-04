@@ -9,6 +9,12 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
+from dash_cockpit._chrome import (
+    build_about_modal,
+    build_settings_drawer,
+    register_about_callback,
+    register_settings_drawer_callback,
+)
 from dash_cockpit._configurator import (
     WORKING_LIST_STORE_ID,
     configurator_export_data,
@@ -207,6 +213,10 @@ class CockpitApp:
         register_refresh_callbacks(
             self._app, self._registry, self._build_render_context
         )
+        register_about_callback(self._app, self._registry)
+        register_settings_drawer_callback(
+            self._app, self._registry, self._build_render_context
+        )
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(
                 self._app,
@@ -327,6 +337,11 @@ class CockpitApp:
             sidebar,
             content,
         ]
+        # Standard-action surfaces: the About modal and Settings drawer are
+        # both always present (every card auto-gets the corresponding ⋮ items
+        # via card_chrome — Settings only when the card returned a settings slot).
+        children.append(build_about_modal())
+        children.append(build_settings_drawer())
         if self._export_backends:
             children.append(self._build_export_modal())
             children.append(dcc.Download(id="_cockpit_export_download"))

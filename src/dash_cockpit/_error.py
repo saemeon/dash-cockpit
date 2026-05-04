@@ -12,11 +12,15 @@ if TYPE_CHECKING:
     from dash_cockpit._card import Card, RenderContext
 
 
-def error_boundary(card: Card, context: RenderContext) -> Component:
-    """Render a card, returning an error placeholder if it raises.
+def error_boundary(
+    card: Card, context: RenderContext
+) -> tuple[Component, Component | None, dict | None]:
+    """Render a card and unwrap the slot dict, isolating errors.
 
-    This is the cockpit's failure-isolation primitive. A bad card surfaces
-    as a red placeholder tile rather than crashing the page or its peers.
+    The cockpit's failure-isolation primitive plus slot-dict normaliser in
+    one step. A bad card surfaces as a red placeholder tile (in the body
+    slot) instead of crashing the page or its peers; settings and actions
+    are left ``None`` for failed cards.
 
     Parameters
     ----------
@@ -27,14 +31,23 @@ def error_boundary(card: Card, context: RenderContext) -> Component:
 
     Returns
     -------
-    Component
-        Either the card's normal render output, or a red error tile carrying
-        the card id and exception message.
+    body : Component
+        The card body — either the card's normal output (after slot-dict
+        unwrap) or a red error tile.
+    settings : Component or None
+        Optional settings panel, or ``None`` if the card returned a bare
+        Component / a dict without a ``settings`` slot / raised.
+    actions : dict or None
+        Optional render-time override of ``CARD_META["actions"]``, or ``None``
+        in the same cases as ``settings``.
     """
+    from dash_cockpit._card import unwrap_render_result
+
     try:
-        return card.render(context)
+        result = card.render(context)
     except Exception as e:
-        return _error_card(card.CARD_META["id"], str(e))
+        return _error_card(card.CARD_META["id"], str(e)), None, None
+    return unwrap_render_result(result)
 
 
 def _error_card(card_id: str, message: str) -> Component:
