@@ -8,24 +8,19 @@ This document is an honest picture of where the cockpit stands, what's still rou
 
 **Shipped:**
 
-- Cards-first protocol (`Card`, `CardMeta`) with runtime-checkable contract.
-- Multi-team registry (`CardRegistry.load_packages`) with startup-time validation.
-- Three page types (`TeamPage`, `UserPage`, `ConfiguratorPage`) — different access patterns, same card primitive.
-- Per-card error isolation (`error_boundary`).
-- Drag/resize layout via `dash-snap-grid`, with localStorage persistence (per browser, per page).
-- Per-card widget sizing through `CardMeta.size`.
-- Per-card menus via `CardMeta.actions` — pattern-matching events emitted on click.
-- Runtime composition via `CardTemplate` + `ConfiguratorPage`, including:
-  - Multi-select fan-out (one card per scalar value, cartesian product across multi-selects).
-  - Cascading dropdowns via `ParameterSpec.options_fn`.
-  - Idempotent Add via deterministic `card_id_for(template_id, params)`.
-- Export pipeline with three opt-in protocols (`TabularCard`, `DocumentCard`, `ChartCard`) and a generic `ExportBackend`.
-- Decoupled layout layer: `_packing.py` is the only module that knows about the grid engine; swapping engines means rewriting one file.
-- **Tier 1 polish (from RESEARCH_NOTES):** edit-mode toggle (cards locked by default), per-card auto-refresh wired through `CARD_META["refresh_interval"]`, `dcc.Loading` spinner around every card body, `CARD_NO_DRAG_CLASS` exposed for card authors, configurable `resize_handles` on `pack_grid`.
-- **Preset library (M1) — generic group model:** `Preset(name, group, entries, ...)` with opaque-string `group` namespacing. `PresetStore` protocol with `(group, name)` composite-key load/delete. Two implementations: `InMemoryPresetStore` (no filtering) and `LocalFilePresetStore` (per-group subdirs, atomic writes, three optional callable providers for visibility/writability/save-target with env-var-based defaults reading `$COCKPIT_USER`). `CockpitApp(preset_store=...)` adds a Load/Save preset section to every `ConfiguratorPage` sidebar; picker labels show `"group / name"`. Seed presets are read-only and respect group visibility. (Layout snapshotting and delete UI deferred.)
-- **Slug-based page routing + shareable URLs (M1.5):** pages addressed at `/<slug>` (slug = `page.id` or slugified `page.name`; duplicates raise at startup). Configurator working lists shareable via `?b=<base64>` (inline) or `?preset=<group>/<name>` (deep-link into `PresetStore`). Share button copies a `?b=` URL clientside. URL hydrates the working list only when empty — never trampling user edits. Missing/invisible presets silently no-op (avoids leaking presence via URL probing).
+- **Core protocol.** `Card` (`runtime_checkable`) + `CardMeta` (TypedDict, validated at registration). `RenderContext` (TypedDict, all-optional, populated per request from Flask state — `Accept-Language` → `locale`, `X-Request-ID` → `request_id`, `flask.g.cockpit_user` → `user`).
+- **Three page types.** `TeamPage` (drag-drop grid), `UserPage` (fixed Bootstrap rows, no persistence), `ConfiguratorPage` (runtime composition).
+- **Multi-team registry.** `CardRegistry.load_packages([...])` with startup-time validation; failed-card error isolation via `error_boundary`.
+- **Drag-drop + sizing.** `dash-snap-grid` (isolated in [_packing.py](src/dash_cockpit/_packing.py) so it can be swapped). 12-column raster, square unit cells (`rowHeight = column pixel width`), localStorage persistence per browser/page. `CockpitApp(content_max_width=1600)` caps + centers content on ultra-wide displays.
+- **Cockpit-owned card chrome.** `card_chrome(body, ...)` in [_chrome.py](src/dash_cockpit/_chrome.py): border, header with title + ⋮ menu, body container. Cards return *body only*.
+- **Tier 1 polish.** Edit-mode toggle (cards locked by default), per-card auto-refresh via `CARD_META["refresh_interval"]`, `dcc.Loading` spinner on every body, `CARD_NO_DRAG_CLASS`, configurable `resize_handles`.
+- **Configurator (Phase 2).** `CardTemplate` + `ParameterSpec` (`select` / `multi_select` / `number` / `date` / `text`), cascading `options_fn`, deterministic `card_id_for(...)` for idempotent Add, multi-select `fanout_params`. Per-card `⋮` actions emit pattern-matching callback events.
+- **Export pipeline.** `TabularCard` / `DocumentCard` / `ChartCard` opt-in protocols, generic `ExportBackend`. Configurator-aware (exports the live working list, not the static `card_ids`).
+- **Preset library (M1).** Generic group-namespaced `Preset(name, group, entries, ...)`; `PresetStore` protocol; in-memory + filesystem implementations; three optional callable providers (visibility, writability, save target) with env-var defaults from `$COCKPIT_USER`. Seed presets are read-only and respect visibility. Layout snapshotting + delete UI deferred.
+- **Slug routing + shareable URLs (M1.5).** Pages at `/<slug>`; duplicates raise at startup. `?b=<base64>` (inline ad-hoc bundle) and `?preset=<group>/<name>` (deep-link via `PresetStore`). Share button copies `?b=` clientside. URL hydration is empty-only (never tramples edits) and silent on missing/invisible presets (no leak via URL probing).
+- **Demo app.** `examples/demo_cockpit/` with three teams (`team_finance`, `team_ops`, `team_sizes`); the **Size Sampler page** renders one tile per `(w, h)` from `1×1` up to `12×4` for visual size reference.
 
-**Tested:** 199 tests, 79% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only.
+**Tested:** 202 tests, 80% coverage. Pure helpers, store CRUD with group filtering, env-var defaults, rendered component trees, callback registration, share codec, slug routing, and `RenderContext` assembly are covered. Live Dash callback bodies (configurator mutations, layout persistence, edit-mode apply, refresh re-render, preset load/save, URL hydration) are smoke-tested only — Selenium/integration coverage is the next gap.
 
 ---
 
@@ -237,8 +232,9 @@ class CockpitConfig:
 | **Pluggable layout engine** | ✅ | Swap one module (`_packing.py`). |
 | **Pluggable export** | ✅ | Implement `ExportBackend.export`. |
 | **Pluggable storage (presets)** | ✅ | M1 (`PresetStore` + 2 implementations) |
-| **Pluggable auth** | ⏳ | M5 |
+| **Pluggable auth** | ⏳ | M5 (`flask.g.cockpit_user` already plumbed into `RenderContext`) |
 | **Shareable URLs (deep links)** | ✅ | M1.5 (`?b=`, `?preset=<group>/<name>`, slug routing) |
+| **`RenderContext` shape locked** | ✅ | Pin-down #1 (`user`, `locale`, `page_filters`, `request_id`) |
 | **Robust to bad cards** | ✅ | Error boundary, isolation by design. |
 | **Robust to slow cards** | ❌ | Render timeout — pin down #6 |
 | **Robust to bad team packages** | ⏳ | Startup try/except — pin down #7 |
@@ -249,8 +245,14 @@ class CockpitConfig:
 
 ## Recommended next-session focus
 
-1. **Pin-down #1 (RenderContext shape).** Highest leverage left. `Card.render(context)` is currently `{}`; locking the dict shape now is free, locking it once teams have built against `{}` is expensive.
-2. **Pin-down #2 (card identity convention).** Same logic: agree on `<team>:<card>` namespacing + `CARD_META["aliases"]` for renames before any rename actually happens.
-3. **M3 (card actions).** Standard "Refresh", "Open in team app", "About" handlers. Small, high-impact for card authors. A `Card.render_settings()` settings drawer fits naturally here.
+Pin-down #1 (`RenderContext`) is now resolved. The remaining "free now, expensive later" decisions:
 
-Defer M4–M6 until the cockpit is deployed in anger and pain points become concrete. Premature `dash-fn-form` migration / auth / MkDocs investment is a recipe for rewriting good infrastructure for fictional needs.
+1. **Pin-down #2 — card-id namespacing.** Agree on `<team>:<card>` IDs (e.g. `finance:revenue_trend`) + `CARD_META["aliases"]: list[str]` for renames *before* any card ID gets baked into a saved layout. Includes migrating the demo IDs and adding alias resolution in `CardRegistry`. ~1 hour.
+2. **Pin-down #5 — layout-state versioning.** Stamp `{"version": 1, "layout": [...]}` into `localStorage` and add a migration hook in `_packing.py` restore. Cheap to add now, brittle to retrofit once user layouts exist in the wild.
+3. **Pin-down #7 — package-import isolation.** Wrap each `CardRegistry.load_packages` import in try/except so a broken team renders a "broken team" placeholder instead of crashing startup. One-level-up of the existing per-card error boundary.
+
+Then ship something visible:
+
+4. **M3 — card actions plumbing.** Standard handlers for Refresh / Open-in-team-app / About declared via `CARD_META["actions"]`. Small, high-leverage for card authors. A `Card.render_settings()` settings drawer fits naturally as a fourth standard action.
+
+Defer M4 (`dash-fn-form` swap), M5 (auth/logging/caching), M5.5 (Mantine port), M6 (MkDocs) until the cockpit is deployed in anger. Premature investment there is a recipe for rewriting good infrastructure for fictional needs — and M5.5 in particular wants the API to stop moving first.

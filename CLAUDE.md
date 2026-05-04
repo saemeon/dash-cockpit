@@ -56,61 +56,31 @@ Single isolated module owns it: `_packing.py` is the only place that knows about
 
 ---
 
-## Widget sizing — shipped
+## Widget sizing
 
-Pages are N-column widget grids:
+Pages are N-column widget grids with **square unit cells** (macOS-widget style):
 
-- Each `TeamPage` and `ConfiguratorPage` declares `columns: int` (default 2).
-- Each `Card` may declare `size=(width_units, height_units)` in `CARD_META`. Default `(1, 1)`.
-- Cards auto-place left-to-right, wrapping at `columns`.
-- Cells fill exactly `row_height × h` pixels (default `row_height=280`). Cards must use `height: 100%` or flex layout — fixed pixel heights will clip or leave whitespace.
+- `TeamPage` / `ConfiguratorPage` declare `columns: int` (default `12`).
+- Each `Card` may declare `size=(w, h)` in `CARD_META`. Default `(1, 1)`.
+- Cards auto-place left-to-right, wrapping at `columns`. Users can drag/resize at runtime.
+- A clientside callback measures each grid's column pixel width and sets `rowHeight` equal to it, so `(1, 1)` is a true square; aspect ratios stay constant across viewports. Floor at `SQUARE_CELL_FLOOR = 80px`.
+- Card bodies must use `height: 100%` or flex layout — fixed pixel heights will clip.
 
 ## Implementation status
 
-- **Phase 1 — Export wiring:** ✅ shipped.
-  - Protocols: `TabularCard`, `DocumentCard`, `ChartCard`, `ExportBackend`. All `runtime_checkable`, all opt-in.
-  - `export_page(page, registry, backend) -> bytes`; backends consume `PageExportData` (frozen dataclass).
-  - `CockpitApp(export_backends={"label": backend})` adds a download button + format-radio modal.
-  - Demo: `revenue_trend` is a `TabularCard`; `examples/demo_cockpit/csv_zip_backend.py` exports any `TabularCard` page as a zip of CSVs.
-- **Phase 2 — Configurator:** ✅ shipped.
-  - `CardTemplate` protocol with `TemplateMeta` and `ParameterSpec` (types: `select`, `multi_select`, `number`, `date`, `text`).
-  - `ParameterSpec.options_fn` is wired — cascading dropdowns rerender the form on parameter change while preserving entered values.
-  - `card_id_for(template_id, params)` — deterministic, order-insensitive id; idempotent Add.
-  - `fanout_params` — multi-select expands cartesian-product into one card per scalar value (kennzahlen pattern).
-  - `ConfiguratorPage` is in the `Page` union; `_layout.render_page` dispatches to it.
-  - `_configurator.py` provides server-side rendering + Dash callbacks (template picker → form swap → store mutation → cards-pane re-render). Working-list state lives in a session `dcc.Store`.
-  - Per-card actions: cards declare `actions: [{"id": ..., "label": ...}]` in `CARD_META` and the cockpit renders them as `⋮` menu items, emitting pattern-matching callback events.
-  - Export modal is configurator-aware: when on a `ConfiguratorPage`, it exports the live working list, not the page's static `card_ids`.
-- **Phase 3 — Drag-drop layout + widget sizing:** ✅ shipped.
-  - `dash-snap-grid` is the layout engine for `TeamPage` and `ConfiguratorPage` working lists.
-  - Drag/resize at runtime; layout persists per-browser via `dcc.Store(storage_type="local")`.
-  - `CardMeta.size` initial hints flow through `pack_grid(sizes=...)`.
-  - `UserPage` deliberately remains on Bootstrap rows (no drag-drop) — its 2D `layout` is the source of truth.
-- **Phase 3.5 — Polish (Tier 1 from RESEARCH_NOTES):** ✅ shipped.
-  - **Edit mode toggle**: sidebar switch flips draggable/resizable across all grids; ⋮ menus hidden via CSS unless edit mode is on. State persisted in localStorage. Cards locked by default — protects against accidental reshuffle.
-  - **Per-card refresh**: cards declare `refresh_interval` seconds; one pattern-matching server callback re-renders each card on its own `dcc.Interval` tick. `0` disables (default).
-  - **Loading spinner**: every card body wraps in `dcc.Loading` so slow re-renders show a spinner instead of looking frozen.
-  - **`card-no-drag` class**: exposed as `CARD_NO_DRAG_CLASS` constant for card authors to opt interactive children out of drag-start. Standard HTML interactives (input/button/select/textarea/a) are excluded automatically.
-  - **Configurable resize handles**: `pack_grid(resize_handles=[...])` lets users resize from any edge. Defaults to dash-snap-grid's `["se"]`.
-- **Phase 3.6 — Slug-based page routing:** ✅ shipped (M1.5 sub-task A).
-  - Each page is addressable at `/<slug>`. Slug = `page.id` if set, else `slugify(page.name)` (lowercased, non-alnum → `-`).
-  - All three page dataclasses (`TeamPage`, `UserPage`, `ConfiguratorPage`) gained an optional `id: str = ""` field.
-  - `CockpitApp.__init__` builds `_pages_by_slug`; **duplicate slugs raise `ValueError`** at construction (governance over silent overwrite, matches the registry's startup-time validation pattern).
-  - Empty slugs (e.g. page name was all punctuation) raise `ValueError` — the author must set `page.id` explicitly.
-  - Replaces the previous int-index routing (`/0`, `/1`). `/` and unknown slugs both resolve to the first page (preserves the previous default behaviour for the root path).
-- **Phase 4 — Preset library (Bibliothek):** ✅ shipped (v2 — generic group model).
-  - `Preset` dataclass: `name`, `group: str` (opaque namespace), `entries`, optional `layout`, `description`, `metadata`. JSON-round-trippable. `(group, name)` is the composite key.
-  - `PresetStore` protocol with `list_presets` / `save(preset)` / `load(group, name)` / `delete(group, name)`. Storage-agnostic — the cockpit never touches storage directly. Implementations are responsible for group-based access control (visibility, write permission); calls that violate permission raise `PermissionError`.
-  - **Generic group model.** The framework prescribes no taxonomy. Deployments invent their own group strings (`"global"`, `"team:finance"`, `"user:alice"`, `"region:apac"`, …). Per-user scoping is just one convention.
-  - Two implementations: `InMemoryPresetStore` (no group filtering, for tests/demos), `LocalFilePresetStore` (one JSON file per preset under `<dir>/<sanitised-group>/<sanitised-name>.json`, atomic writes).
-  - **Three optional providers on `LocalFilePresetStore`:** `visible_groups_provider`, `writable_groups_provider`, `default_save_group_provider`. All callables, invoked per-op so they can read request-scoped state.
-  - **Env-var defaults.** When providers are omitted, the store reads `$COCKPIT_USER` (configurable via `user_env_var`) and assembles sensible defaults: visible = `["global", f"user:{u}"]`, writable = `[f"user:{u}"]`, save target = `f"user:{u}"`. With no env user: visible = `["global"]`, writable = `[]` (no saves possible).
-  - **Seed presets** (in-memory, layered on top of disk) replace the old `curated=` arg. Filtered by visibility same as disk presets. Saving/deleting a seeded `(group, name)` raises `PermissionError`.
-  - Group sanitisation prevents path-traversal (`"../../../etc"` becomes `"_______etc"`).
-  - `CockpitApp(preset_store=...)` enables a preset section in every `ConfiguratorPage` sidebar (picker labels = `"group / name"`, Load button, Save modal showing the destination group).
-  - Save callback writes to `default_save_group_provider()`; overwrites by `(group, name)`.
-  - Layout snapshotting in presets is **not yet wired** (the `layout` field exists on `Preset` but the save callback only stores `entries`). Follow-up.
-  - Delete UI is **not yet wired** (only the storage protocol supports it). Follow-up.
+- **Phases 1–3.6 (foundations):** ✅ shipped.
+  - **Phase 1 — Export wiring:** `TabularCard` / `DocumentCard` / `ChartCard` / `ExportBackend` protocols (all `runtime_checkable`, opt-in); `export_page()`; `CockpitApp(export_backends=...)` wires download button + format modal.
+  - **Phase 2 — Configurator:** `CardTemplate` + `ParameterSpec` (types `select` / `multi_select` / `number` / `date` / `text`); `options_fn` cascading dropdowns; deterministic `card_id_for(template_id, params)` for idempotent Add; multi-select `fanout_params` (one card per scalar value, cartesian product); `ConfiguratorPage` dispatch in `render_page`. Per-card `⋮` actions emitted as pattern-matching callback events.
+  - **Phase 3 — Drag-drop + sizing:** `dash-snap-grid` engine in [_packing.py](src/dash_cockpit/_packing.py); per-browser localStorage layout persistence; `CardMeta.size` flows into initial layout. `UserPage` stays on Bootstrap rows (its 2D `layout` is the source of truth — no drag-drop).
+  - **Phase 3.5 — Tier 1 polish:** edit-mode toggle (cards locked by default; ⋮ menus hidden via CSS); per-card auto-refresh via `CARD_META["refresh_interval"]` + pattern-matching `dcc.Interval`; `dcc.Loading` spinner around every body; `CARD_NO_DRAG_CLASS` constant + auto-cancel for `input`/`button`/`select`/`textarea`/`a`; configurable `resize_handles`.
+  - **Phase 3.6 — Slug routing:** each page at `/<slug>` (slug = `page.id` else slugified `name`); duplicate slugs raise `ValueError` at construction; `/` and unknown slugs resolve to the first page.
+- **Phase 4 — Preset library (M1):** ✅ shipped — generic group model.
+  - `Preset(name, group, entries, layout?, description, metadata)`, JSON round-trippable, `(group, name)` composite key. `PresetStore` protocol with `list_presets` / `save` / `load(group, name)` / `delete(group, name)`. Storage-agnostic — implementations enforce group access control; permission violations raise `PermissionError`.
+  - **Generic group model.** No prescribed taxonomy — deployments invent their own strings (`"global"`, `"team:finance"`, `"user:alice"`, …).
+  - Two implementations: `InMemoryPresetStore` (no filtering, for tests), `LocalFilePresetStore` (per-group subdirs, atomic writes, three optional callable providers `visible_groups_provider` / `writable_groups_provider` / `default_save_group_provider`, env-var defaults reading `$COCKPIT_USER`). Group sanitisation prevents path-traversal.
+  - Seed presets layered in-memory on top of disk, filtered by visibility. Saving/deleting a seeded entry raises `PermissionError`.
+  - `CockpitApp(preset_store=...)` adds a Load/Save section to every `ConfiguratorPage` sidebar.
+  - **Deferred:** layout snapshotting (the `Preset.layout` field exists but is not populated on save); delete UI.
 - **Phase 4.5 — URL routing & shareable views (M1.5):** ✅ shipped.
   - New module `_share.py` defines the bundle wire format: `list[{"template_id": str, "params": dict}]` — same shape as `WORKING_LIST_STORE_ID.data` and `Preset.entries`. No new dataclass.
   - `encode_bundle` / `decode_bundle` round-trip a working list through urlsafe-base64-no-padding JSON. `sort_keys=True` for deterministic tokens.
@@ -142,301 +112,21 @@ Pages are N-column widget grids:
 - **The configurator form is bespoke, not dash-fn-form.** Originally planned to use `dash-fn-form` (already in the workspace) for parameter rendering; v1 uses dbc/dcc directly. Revisit before scope grows.
 - **Live callbacks are not unit-test covered.** Pure helpers and the rendered component tree are covered; configurator and layout-persistence callbacks need a running Dash app to exercise. A Selenium/integration smoke test is the next step.
 - **No export-format validation.** A backend handed a page with no compatible cards is responsible for handling it (the demo writes a `README.txt`). A more opinionated cockpit would gray out incompatible formats in the modal.
-- **`refresh_interval` is documented but not yet wired.** Cards declare it in `CARD_META` but the cockpit does not auto-refresh.
+- **No render timeout / payload size limit.** A card that runs forever or returns 10 MB of DOM has no per-card budget. Pin-down #6 covers the design.
+- **Team package imports are not isolated.** `CardRegistry.load_packages([...])` imports arbitrary Python; a buggy team can crash startup. Pin-down #7 covers the fix (try/except per package + "broken team" placeholder).
 
 ---
 
-Team Cockpit System Blueprint (Cards-first executive layer)
-1. Purpose and scope
-You are building an executive cockpit on top of an ecosystem of existing internal team applications.
-It is important to restate the separation clearly:
-Team applications (existing, unchanged)
-* Full internal tools per domain (Finance, Ops, Product, etc.)
-* Contain workflows, editing, deep analysis, operational tooling
-* Are not constrained by cockpit design
-* Own their own data access and business logic
-Cockpit (new system)
-* Executive-facing overview layer
-* Read-oriented, signal-driven
-* Built on a single Plotly Dash application
-* Aggregates “cards” from all teams
-* Provides structured pages (predefined or user-defined)
-The cockpit does NOT replace team apps. It is a management abstraction layer.
+## Original brief
 
-1. Core architectural decision: cards-first system
-You decided correctly to move to a cards-first model.
-2.1 What a card is
-A card is the atomic unit of insight exposed by a team for management consumption.
-It is:
-* a self-contained rendering function
-* optionally interactive (light interactions only)
-* responsible for its own data retrieval
-* visually consistent via shared conventions
-Cards are NOT:
-* full dashboards
-* workflows
-* multi-component applications
+The cockpit started from a one-page brief framing it as a *management abstraction layer over existing team apps*: read-oriented, signal-driven, single Dash runtime, multi-team, with strict per-card failure isolation. Teams keep their full internal apps; the cockpit only consumes a `get_cards()` export.
 
-2.2 Card contract (mandatory interface)
-Each card must implement:
-def render(context: dict):
-    """
-    Must return a Dash component.
-    Must be fully self-contained.
-    """
-Cards may internally:
-* fetch data from their own team systems
-* call internal services
-* perform lightweight aggregation
-But:
-* they must NOT depend on other cards
-* they must NOT assume global state
+Every load-bearing decision from that brief is reflected in the code and the sections above:
 
-2.3 Card metadata
-Each card also exposes metadata:
-CARD_META = {
-    "id": "revenue_trend",
-    "title": "Revenue Trend",
-    "team": "finance",
-    "description": "Monthly revenue development",
-    "refresh_interval": 300,
-    "category": "finance"
-}
-This enables:
-* global registry
-* search/filtering
-* layout composition
+- *Cards-first protocol with `render(context)` + `CARD_META`* — [_card.py](src/dash_cockpit/_card.py).
+- *Failure isolation* — [_error.py](src/dash_cockpit/_error.py) wraps every render in `error_boundary`.
+- *Pages are compositions of cards* — three concrete `Page` types in [_page.py](src/dash_cockpit/_page.py), unified dispatch in [_layout.py](src/dash_cockpit/_layout.py).
+- *Team-owned data, cockpit-owned presentation* — `CardRegistry.load_packages([...])` in [_registry.py](src/dash_cockpit/_registry.py); cards fetch independently.
+- *Startup-loaded, not dynamic* — packages are imported at construction; no runtime plugin discovery.
 
-3. Team integration model
-Each team delivers a Python package per domain, installed into the cockpit runtime environment (via controlled environment such as a Posit-managed environment or similar).
-No runtime Git loading. Everything is installed at startup.
-
-3.1 Team repository structure
-Each team repo contains:
-team_finance/
-│
-├── internal_app/
-│   ├── workflows/
-│   ├── services/
-│   └── dashboards/
-│
-├── cockpit_export/
-│   ├── cards/
-│   │   ├── revenue.py
-│   │   ├── cash_position.py
-│   │
-│   └── export.py
-│
-└── pyproject.toml
-
-3.2 Export contract (critical boundary)
-Each team exposes:
-def get_cards():
-    return [
-        revenue_card,
-        cash_position_card
-    ]
-This is the ONLY interface the cockpit consumes.
-
-3.3 Key principle
-* internal_app = full operational system
-* cockpit_export = management abstraction layer
-This avoids coupling operational logic to executive views.
-
-4. Cockpit system design
-4.1 Startup model (important decision)
-All packages are loaded at startup.
-* No runtime plugin installation
-* No dynamic Git loading
-* Updates require redeployment
-This ensures stability.
-
-4.2 Card registry
-At startup:
-1. import all team packages
-2. call get_cards()
-3. build global registry
-Structure:
-CARD_REGISTRY = {
-    "revenue_trend": {
-        "render": <function>,
-        "meta": {...}
-    }
-}
-
-4.3 Failure model (critical requirement)
-Cards are isolated units.
-If a card fails:
-* it must NOT break the cockpit
-* it must render an error placeholder
-* system continues functioning
-Example pattern:
-try:
-    output = card.render(context)
-except Exception as e:
-    output = ErrorCard(card_id, str(e))
-This ensures graceful degradation.
-
-5. Page system (important clarification from your design)
-You defined a unified abstraction: pages are compositions of cards.
-This is correct and central.
-
-5.1 Two page types
-A. Team-defined pages (curated views)
-* predefined arrangement of cards
-* stable structure
-* used for “official” management views
-PAGE = {
-    "name": "Finance Overview",
-    "cards": [
-        "revenue_trend",
-        "cash_position",
-        "margin"
-    ]
-}
-
-B. User-defined pages (dynamic layouts)
-* users assemble cards themselves
-* layout is stored as configuration
-USER_PAGE = {
-    "layout": [
-        ["revenue_trend", "margin"],
-        ["risk_exposure"]
-    ]
-}
-
-5.2 Key abstraction
-You explicitly unified the system:
-A page is just a list (or grid) of cards.
-This is the core simplification that enables:
-* consistency
-* reuse
-* future extensibility (Bloomberg-style layouts)
-
-6. Layout system
-Initial version:
-* simple grid (rows/columns)
-* fixed rendering
-* no drag-and-drop yet
-Later extension (optional):
-* user-configurable layout engine
-* persistence of layouts
-But not needed for MVP.
-
-7. Cockpit runtime flow
-7.1 Startup
-1. load all installed team packages
-2. call get_cards() for each team
-3. build global CARD_REGISTRY
-4. validate:
-    * duplicate card IDs
-    * missing metadata
-    * broken imports
-
-7.2 Rendering flow
-1. user selects page
-2. cockpit resolves list of card IDs
-3. for each card:
-    * call render(context)
-    * wrap in error boundary
-4. compose into grid layout
-5. display in Dash UI
-
-8. Data ownership model (important constraint)
-You explicitly chose:
-* each team fetches its own data
-* cockpit does NOT mediate data access
-Implications:
-* cards are responsible for correctness of their own data
-* potential inconsistency risk is accepted for autonomy
-* no central data abstraction layer required initially
-This keeps system flexible but requires discipline.
-
-9. Interaction model
-
-The boundary is between cards, not inside them. Within a single card, do anything Dash supports — internal state, callbacks, sub-components, even a small form-and-chart pair. Cards may take more grid space (`CARD_META["size"] = (2, 1)` or larger) to host richer compositions; the "one card per insight" rule is about cohesion, not literal size.
-
-What is *not* supported: cross-card interactions, callbacks that reach across cards, or global state shared between cards. Three views that must share state ship as one larger composite card, not three coupled cards. This is what makes per-card error isolation, deterministic `card_id_for(...)`, and the iOS-widget mental model all work.
-
-10. Versioning strategy
-You chose strict versioning:
-* dependencies pinned in environment (requirements-based)
-* no runtime version switching
-* updates happen via redeploy
-This matches your controlled deployment environment.
-
-11. Failure strategy (non-negotiable)
-System must:
-* continue rendering if individual cards fail
-* display error card instead of breaking UI
-* isolate failures per card only
-This is critical for executive reliability.
-
-12. Package distribution model
-All team packages:
-* installed into shared environment
-* managed centrally
-* loaded at startup
-You are NOT using:
-* Git-based runtime loading
-* dynamic plugin fetching
-You ARE using:
-* controlled dependency installation
-
-13. System vision (final architecture)
-End state:
-Teams
-* maintain full internal applications
-* expose “cockpit export layer” (cards)
-Cards
-* atomic insight units
-* reusable across pages and contexts
-* consistent interface across organisation
-Pages
-* compositions of cards
-* either curated (team-defined) or flexible (user-defined)
-Cockpit
-* single Dash runtime
-* registry of all cards
-* rendering engine + layout system
-* executive-level overview system
-
-14. Key design principles
-1. Cards are the atomic UI primitive
-2. Pages are compositions of cards
-3. Teams own data, not cockpit
-4. Cockpit owns presentation, not logic
-5. Failures are isolated per card
-6. System is startup-loaded, not dynamic
-7. Simplicity over runtime flexibility
-
-15. Implementation phases (recommended order)
-Phase 1: Minimal cockpit
-* Dash app shell
-* card registry
-* 1–2 example cards from one team
-* basic grid rendering
-* error isolation
-
-Phase 2: Multi-team integration
-* install multiple packages
-* standardise get_cards()
-* validate registry integrity
-
-Phase 3: Page system
-* static pages (card lists)
-* navigation between pages
-
-Phase 4: User-defined layouts
-* config-driven layouts
-* optional personalization layer
-
-Phase 5: Hardening
-* monitoring
-* logging per card
-* performance constraints
-* caching if needed
-
-Final summary
-You are building:
-A cards-first executive analytics cockpit where teams publish self-contained insight units, and pages are simply structured compositions of those cards, all running in a single Dash application with strict isolation and graceful failure handling.
+Everything else (drag-drop, configurator, presets, URL sharing, chrome, square cells, `RenderContext`) is plumbing layered on top — see "Implementation status" above.
