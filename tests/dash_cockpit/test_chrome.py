@@ -1,6 +1,6 @@
 """Tests for card chrome — action normalisation and standard-action injection."""
 
-import dash_bootstrap_components as dbc
+import dash_mantine_components as dmc
 from dash import html
 
 from dash_cockpit._chrome import (
@@ -67,11 +67,11 @@ def test_normalise_dict_value_dict_label_default():
 
 
 def _menu_item_action_ids(chrome_component) -> list[str]:
-    """Walk the chrome tree and collect action IDs from DropdownMenuItems."""
+    """Walk the chrome tree and collect action IDs from dmc.MenuItem nodes."""
     ids: list[str] = []
 
     def walk(node):
-        if isinstance(node, dbc.DropdownMenuItem):
+        if isinstance(node, dmc.MenuItem):
             iid = getattr(node, "id", None)
             if isinstance(iid, dict) and iid.get("type") == "_cockpit_card_action":
                 ids.append(iid.get("action"))
@@ -126,7 +126,7 @@ def test_chrome_no_actions_still_has_standard():
 
 
 def test_chrome_extra_menu_items_appear_last():
-    extra = dbc.DropdownMenuItem("Remove", id="remove-x")
+    extra = dmc.MenuItem("Remove", id="remove-x")
     chrome = card_chrome(
         html.Div("body"),
         card_id="x",

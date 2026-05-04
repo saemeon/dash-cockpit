@@ -1,24 +1,30 @@
 """Cockpit-owned card chrome — the standard frame around every card body.
 
-The cockpit is responsible for the *look* of a card (border, rounded corners,
-header bar with title and … menu). Teams provide only the *body* — the actual
-content of the card. This guarantees visual consistency across teams and
-removes "cards must use ``height: 100%``" footguns: the chrome owns the cell.
+The cockpit owns the card's *frame* (border, rounded corners, body padding)
+and floats a `…` action menu in the top-right corner. The card body owns
+everything else, including any title or heading the team wants to render.
+There is **no chrome header bar**: a header eats vertical space and forces
+visual uniformity teams don't always want; floating the menu over the body
+keeps the full cell available for content (matches the cardcanvas approach).
 
 The card protocol from a team's perspective:
 
     CARD_META = {"id": "...", "title": "...", ...}
     def render(context: dict) -> Component:
-        # return ONLY the body — no border, no title, no padding around the edge.
-        # The cockpit draws the chrome around it.
+        # return the body. Render your own title inside if you want one.
+        # The cockpit draws the border + the floating menu around it.
         ...
+
+``CARD_META["title"]`` is still consumed elsewhere (the About modal, the
+registry, the navigation breadcrumbs); it's just no longer displayed by the
+chrome.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import dash_bootstrap_components as dbc
+import dash_mantine_components as dmc
 from dash import html
 
 from dash_cockpit._packing import CARD_MENU_CLASS
@@ -28,9 +34,9 @@ if TYPE_CHECKING:
 
 
 _CARD_STYLE = {
+    # position: relative anchors the floating menu's absolute positioning.
+    "position": "relative",
     "height": "100%",
-    "display": "flex",
-    "flexDirection": "column",
     "background": "#ffffff",
     "border": "1px solid #dee2e6",
     "borderRadius": "8px",
@@ -38,31 +44,19 @@ _CARD_STYLE = {
     "overflow": "hidden",
 }
 
-_HEADER_STYLE = {
-    "display": "flex",
-    "justifyContent": "space-between",
-    "alignItems": "center",
-    "padding": "8px 12px",
-    "borderBottom": "1px solid #eef0f2",
-    "flexShrink": 0,
-    "fontSize": "0.95rem",
-}
-
 _BODY_STYLE = {
-    "flex": "1",
+    "height": "100%",
     "padding": "12px",
     "overflow": "auto",
-    "minHeight": "0",  # standard flexbox-overflow trick
 }
 
-_MENU_TOGGLE_STYLE = {
-    "color": "#6c757d",
-    "padding": "0 6px",
-    "fontSize": "1.2rem",
-    "lineHeight": "1",
-    "border": "none",
-    "background": "transparent",
-    "boxShadow": "none",
+_MENU_OVERLAY_STYLE = {
+    # Float the … menu top-right so the chrome owns no visible header bar.
+    # Cards control their own visual including any title they want.
+    "position": "absolute",
+    "top": "4px",
+    "right": "4px",
+    "zIndex": 2,
 }
 
 
@@ -122,7 +116,6 @@ slot dicts — the cockpit auto-injects them and registers their callbacks.
 
 ABOUT_MODAL_ID = "_cockpit_about_modal"
 ABOUT_MODAL_BODY_ID = "_cockpit_about_modal_body"
-ABOUT_MODAL_TITLE_ID = "_cockpit_about_modal_title"
 
 SETTINGS_DRAWER_ID = "_cockpit_settings_drawer"
 SETTINGS_DRAWER_BODY_ID = "_cockpit_settings_drawer_body"
@@ -133,18 +126,16 @@ def build_about_modal() -> Component:
 
     The modal opens with content rendered server-side when any card's About
     … action fires. Add to your layout once at app construction; one modal
-    serves every card.
+    serves every card. ``title`` is set by the open-callback via
+    ``Output(ABOUT_MODAL_ID, "title")``.
     """
-    return dbc.Modal(
-        [
-            dbc.ModalHeader(
-                dbc.ModalTitle("", id=ABOUT_MODAL_TITLE_ID),
-                close_button=True,
-            ),
-            dbc.ModalBody(id=ABOUT_MODAL_BODY_ID),
-        ],
+    return dmc.Modal(
+        children=html.Div(id=ABOUT_MODAL_BODY_ID),
         id=ABOUT_MODAL_ID,
-        is_open=False,
+        title="",
+        opened=False,
+        centered=True,
+        size="md",
     )
 
 
@@ -159,8 +150,8 @@ def register_about_callback(app, registry) -> None:
     from dash import ALL, Input, Output, callback_context, no_update
 
     @app.callback(
-        Output(ABOUT_MODAL_ID, "is_open"),
-        Output(ABOUT_MODAL_TITLE_ID, "children"),
+        Output(ABOUT_MODAL_ID, "opened"),
+        Output(ABOUT_MODAL_ID, "title"),
         Output(ABOUT_MODAL_BODY_ID, "children"),
         Input(
             {
@@ -228,13 +219,15 @@ def build_settings_drawer() -> Component:
     is re-rendered on each open, which keeps callback wiring simple (no
     duplicate IDs across body + settings copies).
     """
-    return dbc.Offcanvas(
-        html.Div(id=SETTINGS_DRAWER_BODY_ID),
+    return dmc.Drawer(
+        children=html.Div(id=SETTINGS_DRAWER_BODY_ID),
         id=SETTINGS_DRAWER_ID,
         title="Settings",
-        is_open=False,
-        placement="end",
-        backdrop=True,
+        opened=False,
+        position="right",
+        size="md",
+        # Mantine's drawer uses an overlay (backdrop) by default; explicit for clarity.
+        overlayProps={"backgroundOpacity": 0.4, "blur": 1},
     )
 
 
@@ -255,7 +248,7 @@ def register_settings_drawer_callback(app, registry, context_provider=None) -> N
     from dash_cockpit._card import unwrap_render_result
 
     @app.callback(
-        Output(SETTINGS_DRAWER_ID, "is_open"),
+        Output(SETTINGS_DRAWER_ID, "opened"),
         Output(SETTINGS_DRAWER_ID, "title"),
         Output(SETTINGS_DRAWER_BODY_ID, "children"),
         Input(
@@ -324,20 +317,22 @@ def card_chrome(
 ) -> Component:
     """Wrap a card body in the standard cockpit chrome.
 
-    The chrome supplies the border, rounded corners, header bar with title
-    and … menu, and the body container that fills the remaining cell height.
-    Teams should never style their card with these themselves — that's the
-    cockpit's job.
+    The chrome supplies the border, rounded corners, body padding, and a
+    floating `…` action menu in the top-right corner. There is no header
+    bar — cards render their own title (if they want one) inside the body.
 
     Parameters
     ----------
     body : Component
         The team-provided card body. May render anything Dash supports;
-        will be placed inside a flex-fill, scrollable body container.
+        will be placed inside a scrollable body container that fills the
+        whole cell.
     card_id : str
         ``CARD_META["id"]``. Used for action callback ids.
     title : str, optional
-        ``CARD_META["title"]`` — shown in the header. Empty string hides it.
+        Accepted for API compatibility and used by the About modal lookup
+        elsewhere — **not rendered by the chrome**. Cards that want a
+        visible title draw it inside their body.
     actions : list, dict, or None, optional
         Either the legacy ``CARD_META["actions"]`` list (``[{"id", "label"}, ...]``)
         or the render-time slot dict (``{action_id: str | {"label", ...extras}}``).
@@ -358,7 +353,16 @@ def card_chrome(
     """
 
     def _action_item(aid: str, label: str, **extra: Any) -> Component:
-        return dbc.DropdownMenuItem(
+        # Map our extras to dmc.MenuItem props. dmc uses href + target like
+        # an anchor; disabled is identical.
+        kwargs: dict[str, Any] = {}
+        if extra.get("href"):
+            kwargs["href"] = extra["href"]
+            # Open external links in a new tab — matches dbc's external_link.
+            kwargs["target"] = "_blank"
+        if extra.get("disabled"):
+            kwargs["disabled"] = True
+        return dmc.MenuItem(
             label,
             id={
                 "type": "_cockpit_card_action",
@@ -366,7 +370,7 @@ def card_chrome(
                 "action": aid,
             },
             n_clicks=0,
-            **extra,
+            **kwargs,
         )
 
     # 1. Custom actions (CARD_META["actions"] or render-time) come first.
@@ -377,7 +381,6 @@ def card_chrome(
             spec.get("label", aid),
             href=spec.get("href"),
             disabled=spec.get("disabled", False),
-            external_link=bool(spec.get("href")),
         )
         for aid, spec in normalised.items()
     ]
@@ -393,36 +396,42 @@ def card_chrome(
 
     menu_items: list[Component] = list(custom_items)
     if custom_items:
-        menu_items.append(dbc.DropdownMenuItem(divider=True))
+        menu_items.append(dmc.MenuDivider())
     menu_items.extend(standard_items)
     if extra_menu_items:
-        menu_items.append(dbc.DropdownMenuItem(divider=True))
+        menu_items.append(dmc.MenuDivider())
         menu_items.extend(extra_menu_items)
 
-    menu_block: Component
+    children: list[Component] = [html.Div(body, style=_BODY_STYLE)]
     if menu_items:
-        menu_block = html.Div(
-            dbc.DropdownMenu(
-                label="…",
-                children=menu_items,
-                size="sm",
-                color="link",
-                align_end=True,
-                caret=False,
-                toggle_style=_MENU_TOGGLE_STYLE,
-            ),
-            className=CARD_MENU_CLASS,
+        children.append(
+            html.Div(
+                dmc.Menu(
+                    [
+                        dmc.MenuTarget(
+                            dmc.ActionIcon(
+                                "…",
+                                variant="subtle",
+                                color="gray",
+                                size="sm",
+                                radius="xl",
+                                # Ensure clicks here don't trigger drag-start.
+                                className=CARD_MENU_CLASS,
+                                **{"aria-label": "Card menu"},
+                            ),
+                        ),
+                        dmc.MenuDropdown(menu_items),
+                    ],
+                    position="bottom-end",
+                    shadow="md",
+                    width=200,
+                ),
+                style=_MENU_OVERLAY_STYLE,
+            )
         )
-    else:
-        menu_block = html.Span()
-
-    header = html.Div(
-        [html.Strong(title) if title else html.Span(), menu_block],
-        style=_HEADER_STYLE,
-    )
 
     return html.Div(
-        [header, html.Div(body, style=_BODY_STYLE)],
+        children,
         style=_CARD_STYLE,
         className="cockpit-card",
     )

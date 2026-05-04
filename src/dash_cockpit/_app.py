@@ -6,8 +6,8 @@ import re
 from typing import Any
 
 import dash
-import dash_bootstrap_components as dbc
-from dash import Input, Output, State, dcc, html, no_update
+import dash_mantine_components as dmc
+from dash import ALL, Input, Output, State, dcc, html, no_update
 
 from dash_cockpit._chrome import (
     build_about_modal,
@@ -61,12 +61,20 @@ def _page_slug(page: Page) -> str:
     return slug
 
 
-def _nav_link(page: Page, slug: str) -> dbc.NavLink:
-    """Build one sidebar nav link pointing at ``/<slug>``."""
-    return dbc.NavLink(
-        page.name,
+_NAV_LINK_TYPE = "_cockpit_nav"
+
+
+def _nav_link(page: Page, slug: str) -> dmc.NavLink:
+    """Build one sidebar nav link pointing at ``/<slug>``.
+
+    ``active`` is driven server-side by a pattern-matching callback that
+    watches ``dcc.Location`` — see :meth:`CockpitApp._register_callbacks`.
+    """
+    return dmc.NavLink(
+        label=page.name,
         href=f"/{slug}",
-        active="exact",
+        id={"type": _NAV_LINK_TYPE, "slug": slug},
+        active=False,
     )
 
 
@@ -121,9 +129,11 @@ class CockpitApp:
     title : str, optional
         Browser tab title and sidebar header. By default ``"Cockpit"``.
     theme : str, optional
-        Bootstrap theme URL passed to ``dash.Dash``. Use any theme from
-        :mod:`dash_bootstrap_components.themes`. By default
-        :data:`dbc.themes.BOOTSTRAP`.
+        Optional external stylesheet URL for ``dash.Dash``. Pre-M5.5 the
+        cockpit was Bootstrap-themed; under Mantine no external stylesheet
+        is needed for the cockpit's own components. Pass a Bootstrap-theme
+        URL only if your card bodies still rely on Bootstrap utility
+        classNames (``text-muted``, ``mb-2``, …). By default ``None``.
     export_backends : dict[str, ExportBackend], optional
         Format label → backend mapping. When non-empty, a "Download report"
         button appears in the sidebar and a format-radio modal lets the user
@@ -166,7 +176,7 @@ class CockpitApp:
         registry: CardRegistry,
         pages: list[Page],
         title: str = "Cockpit",
-        theme: str = dbc.themes.BOOTSTRAP,
+        theme: str | None = None,
         export_backends: dict[str, ExportBackend] | None = None,
         preset_store: PresetStore | None = None,
         content_max_width: int | None = 1600,
@@ -191,7 +201,7 @@ class CockpitApp:
             self._slugs.append(slug)
         self._app = dash.Dash(
             __name__,
-            external_stylesheets=[theme],
+            external_stylesheets=[theme] if theme else [],
             suppress_callback_exceptions=True,
         )
         self._app.title = title
@@ -215,105 +225,111 @@ class CockpitApp:
                 context_provider=self._build_render_context,
             )
 
-    def _build_sidebar(self) -> html.Div:
+    def _build_navbar_children(self) -> list[Any]:
+        """Contents of the AppShell's navbar (sidebar) — nav links + extras."""
         nav_items = [
             _nav_link(p, s)
             for p, s in zip(self._pages, self._slugs, strict=True)
         ]
-        children: list[Any] = [
-            html.H4(self._title, className="p-3 mb-2"),
-            dbc.Nav(nav_items, vertical=True, pills=True, className="px-2"),
-            # Edit-mode toggle: when off, cards are locked and menus hidden.
-            html.Div(
-                dbc.Switch(
-                    id=EDIT_MODE_TOGGLE_ID,
-                    label="Edit layout",
-                    value=False,
-                    className="mb-0",
-                ),
-                className="px-3 mt-3",
-            ),
-        ]
+        items: list[Any] = list(nav_items)
+        items.append(dmc.Divider(my="sm"))
+        # Edit-mode toggle: when off, cards are locked.
+        items.append(
+            dmc.Switch(
+                id=EDIT_MODE_TOGGLE_ID,
+                label="Edit layout",
+                checked=False,
+            )
+        )
         if self._export_backends:
-            children.append(
-                html.Div(
-                    dbc.Button(
-                        "Download report",
-                        id="_cockpit_export_open",
-                        color="secondary",
-                        outline=True,
-                        size="sm",
-                        className="w-100",
-                    ),
-                    className="px-2 mt-3",
+            items.append(
+                dmc.Button(
+                    "Download report",
+                    id="_cockpit_export_open",
+                    variant="light",
+                    size="xs",
+                    fullWidth=True,
+                    mt="md",
                 )
             )
-        return html.Div(
-            children,
-            style={
-                "width": "220px",
-                "minHeight": "100vh",
-                "background": "#f8f9fa",
-                "borderRight": "1px solid #dee2e6",
-                "flexShrink": "0",
-            },
-        )
+        return [dmc.Stack(items, gap="xs", p="md")]
 
-    def _build_export_modal(self) -> dbc.Modal:
+    def _build_export_modal(self) -> Component:
         labels = list(self._export_backends)
-        radios = dbc.RadioItems(
+        radios = dmc.RadioGroup(
+            children=dmc.Stack(
+                [dmc.Radio(label=lbl, value=lbl) for lbl in labels],
+                gap="xs",
+            ),
             id="_cockpit_export_format",
-            options=[{"label": lbl, "value": lbl} for lbl in labels],
             value=labels[0] if labels else None,
-            className="mb-2",
+            mb="sm",
         )
-        return dbc.Modal(
+        return dmc.Modal(
             [
-                dbc.ModalHeader(dbc.ModalTitle("Export report")),
-                dbc.ModalBody(
-                    [
-                        html.Div("Choose a format:", className="mb-2"),
-                        radios,
-                        html.Div(
-                            id="_cockpit_export_status",
-                            className="text-muted small mt-2",
-                        ),
-                    ]
+                dmc.Text("Choose a format:", mb="sm"),
+                radios,
+                dmc.Text(
+                    "",
+                    id="_cockpit_export_status",
+                    c="dimmed",
+                    size="sm",
+                    mt="xs",
                 ),
-                dbc.ModalFooter(
+                dmc.Group(
                     [
-                        dbc.Button(
+                        dmc.Button(
                             "Cancel",
                             id="_cockpit_export_cancel",
-                            color="secondary",
-                            outline=True,
+                            variant="default",
                         ),
-                        dbc.Button(
-                            "Download", id="_cockpit_export_run", color="primary"
+                        dmc.Button(
+                            "Download",
+                            id="_cockpit_export_run",
+                            variant="filled",
                         ),
-                    ]
+                    ],
+                    justify="flex-end",
+                    mt="md",
                 ),
             ],
             id="_cockpit_export_modal",
-            is_open=False,
+            title="Export report",
+            opened=False,
+            centered=True,
         )
 
-    def _build_layout(self) -> html.Div:
-        sidebar = self._build_sidebar()
+    def _build_layout(self) -> Component:
         content_style: dict[str, Any] = {
-            "flex": "1",
             "padding": "24px",
-            "overflowY": "auto",
         }
         if self._content_max_width is not None:
-            # Cap width and center within the remaining flex space — keeps
-            # cards a sensible size on ultra-wide displays.
+            # Cap width and center inside AppShellMain — keeps cards a sensible
+            # size on ultra-wide displays.
             content_style["maxWidth"] = f"{self._content_max_width}px"
             content_style["marginLeft"] = "auto"
             content_style["marginRight"] = "auto"
             content_style["width"] = "100%"
         content = html.Div(id=PAGE_CONTENT_ID, style=content_style)
-        children: list[Any] = [
+
+        appshell = dmc.AppShell(
+            [
+                dmc.AppShellHeader(
+                    dmc.Group(
+                        [dmc.Title(self._title, order=4)],
+                        h="100%",
+                        px="md",
+                    ),
+                ),
+                dmc.AppShellNavbar(self._build_navbar_children()),
+                dmc.AppShellMain(content),
+            ],
+            header={"height": 56},
+            navbar={"width": 220, "breakpoint": 0},
+            padding=0,
+        )
+
+        siblings: list[Any] = [
             dcc.Location(id="_cockpit_url"),
             # Persisted edit-mode state — survives reloads.
             dcc.Store(
@@ -324,18 +340,17 @@ class CockpitApp:
             # Resize tick — bumped clientside on window.resize so square-cell
             # callback re-measures grid widths.
             dcc.Store(id=GRID_RESIZE_TICK_ID, data=0),
-            sidebar,
-            content,
+            appshell,
+            # Standard-action surfaces: About modal + Settings drawer always
+            # rendered (auto-injected … items in card_chrome target them).
+            build_about_modal(),
+            build_settings_drawer(),
         ]
-        # Standard-action surfaces: the About modal and Settings drawer are
-        # both always present (every card auto-gets the corresponding … items
-        # via card_chrome — Settings only when the card returned a settings slot).
-        children.append(build_about_modal())
-        children.append(build_settings_drawer())
         if self._export_backends:
-            children.append(self._build_export_modal())
-            children.append(dcc.Download(id="_cockpit_export_download"))
-        return html.Div(children, style={"display": "flex", "minHeight": "100vh"})
+            siblings.append(self._build_export_modal())
+            siblings.append(dcc.Download(id="_cockpit_export_download"))
+        # MantineProvider must wrap any dmc components for theming context.
+        return dmc.MantineProvider(html.Div(siblings))
 
     def _resolve_page(self, pathname: str | None) -> Page | None:
         """Look up a page by URL slug; fall back to the first page on miss."""
@@ -376,6 +391,21 @@ class CockpitApp:
         return ctx
 
     def _register_callbacks(self) -> None:
+        # dmc.NavLink doesn't auto-detect the current URL like dbc.NavLink's
+        # active="exact" did — we drive `active` via this pattern-matching
+        # callback. Falls back to the first slug for ``/`` and unknown paths,
+        # matching :meth:`_resolve_page`.
+        @self._app.callback(
+            Output({"type": _NAV_LINK_TYPE, "slug": ALL}, "active"),
+            Input("_cockpit_url", "pathname"),
+            State({"type": _NAV_LINK_TYPE, "slug": ALL}, "id"),
+        )
+        def _set_active_nav(pathname, ids):
+            slug = (pathname or "").lstrip("/")
+            if slug not in self._pages_by_slug and self._slugs:
+                slug = self._slugs[0]
+            return [d.get("slug") == slug for d in ids]
+
         @self._app.callback(
             Output(PAGE_CONTENT_ID, "children"),
             Input("_cockpit_url", "pathname"),
@@ -395,11 +425,11 @@ class CockpitApp:
             return
 
         @self._app.callback(
-            Output("_cockpit_export_modal", "is_open"),
+            Output("_cockpit_export_modal", "opened"),
             Input("_cockpit_export_open", "n_clicks"),
             Input("_cockpit_export_cancel", "n_clicks"),
             Input("_cockpit_export_run", "n_clicks"),
-            State("_cockpit_export_modal", "is_open"),
+            State("_cockpit_export_modal", "opened"),
             prevent_initial_call=True,
         )
         def toggle_modal(open_clicks, cancel_clicks, run_clicks, is_open):

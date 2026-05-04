@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
-import dash_bootstrap_components as dbc
+import dash_mantine_components as dmc
 from dash import dcc, html
 
 from dash_cockpit._error import error_boundary
@@ -89,35 +89,35 @@ def _field_component(
     else:
         value = spec.default
 
+    data = [{"label": str(o), "value": o} for o in options]
     if spec.type == "select":
-        widget = dcc.Dropdown(
+        widget = dmc.Select(
             id=param_input_id(spec.name),
-            options=[{"label": str(o), "value": o} for o in options],
+            data=data,
             value=value,
             clearable=not spec.required,
         )
     elif spec.type == "multi_select":
-        widget = dcc.Dropdown(
+        widget = dmc.MultiSelect(
             id=param_input_id(spec.name),
-            options=[{"label": str(o), "value": o} for o in options],
+            data=data,
             value=value or [],
-            multi=True,
         )
     elif spec.type == "number":
-        widget = dbc.Input(
+        widget = dmc.NumberInput(
             id=param_input_id(spec.name),
-            type="number",
             value=value,
         )
     elif spec.type == "date":
+        # dcc.DatePickerSingle is part of Dash core, not Bootstrap; leaving
+        # it intact rather than churning over to dmc.DatePickerInput.
         widget = dcc.DatePickerSingle(
             id=param_input_id(spec.name),
             date=value,
         )
     else:  # "text" or fallback
-        widget = dbc.Input(
+        widget = dmc.TextInput(
             id=param_input_id(spec.name),
-            type="text",
             value=value or "",
         )
     return html.Div([label, widget], className="mb-3")
@@ -226,7 +226,7 @@ def _render_card_tile(card: Any, context: RenderContext) -> Component:
         else card.CARD_META.get("actions"),
         has_settings=settings is not None,
         extra_menu_items=[
-            dbc.DropdownMenuItem("Remove", id=remove_btn_id(cid), n_clicks=0)
+            dmc.MenuItem("Remove", id=remove_btn_id(cid), n_clicks=0, color="red")
         ],
     )
 
@@ -341,29 +341,22 @@ def render_configurator(
     sidebar_children.extend(
         [
             html.H6("Template", className="mb-2"),
-            dcc.Dropdown(
+            dmc.Select(
                 id=TEMPLATE_PICKER_ID,
-                options=options,
+                data=options,
                 value=initial_template.TEMPLATE_META.id,
                 clearable=False,
-                className="mb-3",
+                mb="md",
             ),
             html.Div(render_parameter_form(initial_template), id=FORM_ID),
-            html.Div(
+            dmc.Group(
                 [
-                    dbc.Button("Add", id=ADD_BTN_ID, color="primary", className="me-2"),
-                    dbc.Button(
-                        "Clear",
-                        id=CLEAR_BTN_ID,
-                        color="secondary",
-                        outline=True,
-                        className="me-2",
-                    ),
-                    dbc.Button(
-                        "Share link", id=SHARE_BTN_ID, color="secondary", outline=True
-                    ),
+                    dmc.Button("Add", id=ADD_BTN_ID, variant="filled"),
+                    dmc.Button("Clear", id=CLEAR_BTN_ID, variant="default"),
+                    dmc.Button("Share link", id=SHARE_BTN_ID, variant="default"),
                 ],
-                className="mt-3",
+                gap="xs",
+                mt="md",
             ),
             html.Div(id=STATUS_ID, className="text-muted small mt-2"),
         ]

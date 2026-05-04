@@ -89,7 +89,7 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - Share button (configurator sidebar) builds a `?b=...` URL clientside (canonical-key JSON, urlsafe base64, no padding) and copies it to clipboard. Long-URL warning above ~2000 chars suggests a preset instead.
   - Status messages target `STATUS_ID` (always present) rather than `PRESET_STATUS_ID`, so URL hydration and Share work in deployments without a configured preset store.
 - **Phase 4.6 — Cockpit-owned card chrome:** ✅ shipped.
-  - New module `_chrome.py` defines `card_chrome(body, *, card_id, title, actions, extra_menu_items)` — the standard frame around every card body: border, rounded corners, header with title and … menu, body container with `flex: 1` + `overflow: auto`.
+  - New module `_chrome.py` defines `card_chrome(body, *, card_id, title, actions, extra_menu_items)` — the standard frame around every card body: border, rounded corners, body container, and a floating top-right `…` menu (`dmc.ActionIcon` overlay; no header bar). Cards render their own title inside the body if they want one. `CARD_META["title"]` is still used by the About modal and registry — it's just not rendered by the chrome.
   - `_layout.py._resolve_card` and `_configurator.py._render_card_tile` both wrap card bodies in `card_chrome` instead of returning bare bodies. The configurator passes a "Remove" item via `extra_menu_items`.
   - Card protocol narrowed: `render(context)` returns the *body only*. Teams must not produce their own border, title, or outer padding — that's the cockpit's job. Existing demo cards updated (H6 titles + outer Divs removed).
   - Per-card menus now live in the chrome header (not absolute-positioned overlays). Edit-mode visibility CSS (`CARD_MENU_CLASS`) still applies.
@@ -115,6 +115,16 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - `CockpitApp._build_render_context()` assembles the dict per request from Flask state: `Accept-Language` → `locale`, `X-Request-ID` (or `flask.g.cockpit_request_id`) → `request_id`, `flask.g.cockpit_user` → `user`. Outside a request context (tests, scripts) returns `{}`.
   - Threaded through every `Card.render` call site: `_app` → `render_page` (page-load callback) and `register_configurator_callbacks` (working-list re-render callback) and `register_refresh_callbacks` (per-card interval callback).
   - Cards must read defensively (`context.get("locale", "en")`); reading `context["user"]` directly raises `KeyError` in unauthenticated deployments. Documented in README "The `context` argument".
+- **Phase 5 — Port to `dash-mantine-components` (ROADMAP M5.5):** ✅ shipped.
+  - Wholesale swap from `dash-bootstrap-components` to `dash-mantine-components`. `dash-bootstrap-components` removed from dependencies.
+  - `dmc.AppShell` (header + navbar + main) replaces the hand-rolled flexbox shell in `_app.py`. Nav links are `dmc.NavLink` with a pattern-matching `active`-by-URL callback (replaces `dbc.NavLink(active="exact")`'s built-in behaviour).
+  - `_chrome.py`: per-card `…` menu uses `dmc.Menu` + `dmc.MenuTarget` + `dmc.MenuDropdown` + `dmc.MenuItem`. About modal is `dmc.Modal`. Settings drawer is `dmc.Drawer` (right edge). The slot-dict / action-shape contract from M3 is unchanged so card authors are unaffected.
+  - `_packing.py.pack_row` uses `dmc.Grid` + `dmc.GridCol` (12-column, same span semantics as Bootstrap so `col_width()` stayed shape-stable).
+  - `_configurator.py`: parameter form widgets are `dmc.NumberInput` / `dmc.TextInput` / `dmc.Select` / `dmc.MultiSelect`; sidebar buttons are `dmc.Button`. `dcc.DatePickerSingle` left intact (Dash core, not Bootstrap).
+  - `_presets.py`: preset picker is `dmc.Select` (data, not options); save modal is `dmc.Modal`.
+  - `CockpitApp(theme=...)` is now `Optional[str] = None`. Pass a Bootstrap-theme URL only if your card bodies still depend on Bootstrap utility classNames (the demo cards use a few — `text-muted`, `mb-2` — and lose styling without one).
+  - Edit-mode toggle now reads `Switch.checked` instead of `Switch.value` (dmc convention); the existing edit-mode callback in `_packing.py` was updated to match.
+  - Whole tree wrapped in `dmc.MantineProvider` for Mantine's theming context.
 - **Phase 4.10 — Per-package import isolation (ROADMAP pin-down #7):** ✅ shipped.
   - `CardRegistry.load_packages([...])` now wraps each `load_package` call in try/except; failures are recorded in `registry._failures` and surfaced via `registry.failures()` (snapshot, not live).
   - `warnings.warn` fires at startup with a `RuntimeWarning` for each failed package, naming the package + the original exception text — visible in console without programmatic access.

@@ -433,85 +433,81 @@ def render_preset_section(presets: list[Preset], save_target: str = "") -> objec
     Component
         A :class:`html.Div` for the configurator sidebar.
     """
-    import dash_bootstrap_components as dbc
-    from dash import dcc, html
+    import dash_mantine_components as dmc
+    from dash import html
 
     options = [{"label": _preset_label(p), "value": _preset_value(p)} for p in presets]
     selected = options[0]["value"] if options else None
 
-    picker = dcc.Dropdown(
+    picker = dmc.Select(
         id=PRESET_PICKER_ID,
-        options=options,
+        data=options,
         value=selected,
         clearable=False,
         placeholder="No presets",
         disabled=not options,
-        className="mb-2",
+        mb="xs",
     )
 
     save_disabled = not save_target
-    buttons = html.Div(
+    buttons = dmc.Group(
         [
-            dbc.Button(
+            dmc.Button(
                 "Load",
                 id=PRESET_LOAD_BTN_ID,
-                color="secondary",
-                outline=True,
-                size="sm",
-                className="me-2",
+                variant="default",
+                size="xs",
                 disabled=not options,
             ),
-            dbc.Button(
+            dmc.Button(
                 "Save current",
                 id=PRESET_SAVE_BTN_ID,
-                color="secondary",
-                outline=True,
-                size="sm",
+                variant="default",
+                size="xs",
                 disabled=save_disabled,
             ),
         ],
-        className="mb-2",
+        gap="xs",
+        mb="xs",
     )
 
     dest_label = save_target if save_target else "(no writable group)"
-    modal = dbc.Modal(
+    modal = dmc.Modal(
         [
-            dbc.ModalHeader(dbc.ModalTitle("Save preset")),
-            dbc.ModalBody(
-                [
-                    html.Div(
-                        [
-                            "Saving to: ",
-                            html.Strong(dest_label, id=PRESET_SAVE_DEST_ID),
-                        ],
-                        className="text-muted small mb-3",
-                    ),
-                    dbc.Label("Preset name", html_for=PRESET_SAVE_NAME_ID),
-                    dbc.Input(
-                        id=PRESET_SAVE_NAME_ID,
-                        type="text",
-                        placeholder="My view",
-                    ),
-                    html.Div(
-                        "Saving with an existing name will overwrite it.",
-                        className="text-muted small mt-2",
-                    ),
-                ]
+            dmc.Text(
+                ["Saving to: ", html.Strong(dest_label, id=PRESET_SAVE_DEST_ID)],
+                c="dimmed",
+                size="sm",
+                mb="md",
             ),
-            dbc.ModalFooter(
+            dmc.TextInput(
+                id=PRESET_SAVE_NAME_ID,
+                label="Preset name",
+                placeholder="My view",
+            ),
+            dmc.Text(
+                "Saving with an existing name will overwrite it.",
+                c="dimmed",
+                size="sm",
+                mt="xs",
+            ),
+            dmc.Group(
                 [
-                    dbc.Button(
+                    dmc.Button(
                         "Cancel",
                         id=PRESET_SAVE_CANCEL_ID,
-                        color="secondary",
-                        outline=True,
+                        variant="default",
                     ),
-                    dbc.Button("Save", id=PRESET_SAVE_CONFIRM_ID, color="primary"),
-                ]
+                    dmc.Button("Save", id=PRESET_SAVE_CONFIRM_ID, variant="filled"),
+                ],
+                justify="flex-end",
+                mt="md",
             ),
         ],
         id=PRESET_SAVE_MODAL_ID,
-        is_open=False,
+        title="Save preset",
+        opened=False,
+        centered=True,
     )
 
     return html.Div(
@@ -562,12 +558,12 @@ def register_preset_callbacks(
         return list(preset.entries), f"Loaded preset: {_preset_label(preset)}"
 
     @app.callback(
-        Output(PRESET_SAVE_MODAL_ID, "is_open"),
+        Output(PRESET_SAVE_MODAL_ID, "opened"),
         Output(PRESET_SAVE_NAME_ID, "value"),
         Input(PRESET_SAVE_BTN_ID, "n_clicks"),
         Input(PRESET_SAVE_CANCEL_ID, "n_clicks"),
         Input(PRESET_SAVE_CONFIRM_ID, "n_clicks"),
-        State(PRESET_SAVE_MODAL_ID, "is_open"),
+        State(PRESET_SAVE_MODAL_ID, "opened"),
         prevent_initial_call=True,
     )
     def _toggle_save_modal(open_clicks, cancel_clicks, confirm_clicks, is_open):
@@ -582,7 +578,7 @@ def register_preset_callbacks(
         return False, no_update
 
     @app.callback(
-        Output(PRESET_PICKER_ID, "options"),
+        Output(PRESET_PICKER_ID, "data"),
         Output(PRESET_PICKER_ID, "value"),
         Output(PRESET_STATUS_ID, "children", allow_duplicate=True),
         Input(PRESET_SAVE_CONFIRM_ID, "n_clicks"),

@@ -36,16 +36,16 @@ class TestColWidth:
 
 
 class TestPackRow:
-    def test_returns_dbc_row(self):
+    def test_returns_grid_with_columns(self):
+        # Mantine's dmc.GridCol uses span= out of 12, mirroring Bootstrap.
         result = pack_row([html.Div("a"), html.Div("b")])
-        # Two equal columns when no width_basis supplied
         assert len(result.children) == 2
-        assert result.children[0].width == 6
+        assert result.children[0].span == 6
 
     def test_width_basis_keeps_consistent_size(self):
         # 1 component, basis=4 → narrow column even though row is alone
         result = pack_row([html.Div("a")], width_basis=4)
-        assert result.children[0].width == col_width(4)
+        assert result.children[0].span == col_width(4)
 
 
 class TestPackGrid:

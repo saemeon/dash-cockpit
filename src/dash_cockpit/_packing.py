@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import dash_bootstrap_components as dbc
+import dash_mantine_components as dmc
 from dash import dcc, html
 from dash_snap_grid import Grid
 
@@ -125,7 +125,10 @@ def layout_store_id(key: str) -> dict[str, str]:
 
 
 def col_width(n: int) -> int:
-    """Bootstrap column width (out of 12) for ``n`` columns per row.
+    """Column span (out of 12) for ``n`` equal columns per row.
+
+    Mantine's ``dmc.Grid`` and Bootstrap's ``dbc.Row`` both use a 12-unit
+    grid system, so this helper is shape-stable across the M5.5 port.
 
     Parameters
     ----------
@@ -135,7 +138,7 @@ def col_width(n: int) -> int:
     Returns
     -------
     int
-        Width per column in Bootstrap's 12-grid units (clamped to ≥ 1).
+        Span per column out of 12 (clamped to ≥ 1).
     """
     return max(1, 12 // n)
 
@@ -143,7 +146,7 @@ def col_width(n: int) -> int:
 def pack_row(
     components: list[Component], *, width_basis: int | None = None
 ) -> Component:
-    """Pack components into one Bootstrap row.
+    """Pack components into one Mantine grid row.
 
     Used by :class:`UserPage`'s 2D layout, where each row is rendered
     independently with equal-width columns.
@@ -162,13 +165,13 @@ def pack_row(
     Returns
     -------
     Component
-        A :class:`dbc.Row` containing one :class:`dbc.Col` per component.
+        A :class:`dmc.Grid` containing one :class:`dmc.GridCol` per component.
     """
     basis = width_basis if width_basis is not None else len(components)
     w = col_width(basis)
-    return dbc.Row(
-        [dbc.Col(c, width=w) for c in components],
-        className="mb-3",
+    return dmc.Grid(
+        [dmc.GridCol(c, span=w) for c in components],
+        mb="md",
     )
 
 
@@ -411,7 +414,7 @@ def register_edit_mode_callbacks(app) -> None:
         }
         """,
         Output(EDIT_MODE_STORE_ID, "data"),
-        Input(EDIT_MODE_TOGGLE_ID, "value"),
+        Input(EDIT_MODE_TOGGLE_ID, "checked"),
         State(EDIT_MODE_STORE_ID, "data"),
     )
 

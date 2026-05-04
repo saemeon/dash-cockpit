@@ -244,30 +244,38 @@ class TestRenderPresetSection:
         assert isinstance(result, html.Div)
 
     def test_picker_options_show_group_prefix(self):
+        # Picker is a dmc.Select after the M5.5 port; options live in `data`.
+        import dash_mantine_components as dmc
+
         result = render_preset_section([
             Preset(name="A", group="global"),
             Preset(name="B", group="user:alice"),
         ])
-        dropdowns = [c for c in _walk(result) if isinstance(c, dcc.Dropdown)]
-        assert len(dropdowns) == 1
-        labels = [o["label"] for o in dropdowns[0].options]
+        selects = [c for c in _walk(result) if isinstance(c, dmc.Select)]
+        assert len(selects) == 1
+        labels = [o["label"] for o in selects[0].data]
         assert labels == ["global / A", "user:alice / B"]
 
     def test_picker_label_omits_group_when_empty(self):
+        import dash_mantine_components as dmc
+
         result = render_preset_section([Preset(name="A")])
-        dropdown = next(c for c in _walk(result) if isinstance(c, dcc.Dropdown))
-        assert dropdown.options[0]["label"] == "A"
+        select = next(c for c in _walk(result) if isinstance(c, dmc.Select))
+        assert select.data[0]["label"] == "A"
 
     def test_picker_disabled_when_empty(self):
+        import dash_mantine_components as dmc
+
         result = render_preset_section([])
-        dropdown = next(c for c in _walk(result) if isinstance(c, dcc.Dropdown))
-        assert dropdown.disabled is True
+        select = next(c for c in _walk(result) if isinstance(c, dmc.Select))
+        assert select.disabled is True
 
     def test_modal_starts_closed(self):
         result = render_preset_section([])
         modal = _find_by_id(result, PRESET_SAVE_MODAL_ID)
         assert modal is not None
-        assert modal.is_open is False
+        # dmc.Modal exposes the visibility flag as `opened`, not `is_open`.
+        assert modal.opened is False
 
 
 class TestRegisterPresetCallbacks:

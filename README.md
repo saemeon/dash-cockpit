@@ -62,14 +62,14 @@ app.run(debug=True)
 
 ## Writing a card
 
-A card is any object with a `CARD_META` dict and a `render(context)` method. **Return only the body** — the cockpit draws the chrome (border, header with title and … menu, padding) around it.
+A card is any object with a `CARD_META` dict and a `render(context)` method. **Return only the body** — the cockpit draws the chrome (border, rounded corners, body padding, and a floating top-right `…` action menu) around it. There's no chrome header bar; if you want a visible title, render it inside the body.
 
 ```python
 from dash import html
 
 CARD_META = {
     "id": "revenue_trend",
-    "title": "Revenue Trend",          # shown in the chrome header
+    "title": "Revenue Trend",          # used by the About modal & registry — not drawn as a header
     "team": "finance",
     "description": "Monthly revenue development",
     "refresh_interval": 300,
@@ -79,10 +79,13 @@ CARD_META = {
 
 def render(context: RenderContext):
     # fetch your own data here, return the body content
-    return html.Div("$12.4M ▲ 3.2%")
+    return html.Div([
+        html.H6("Revenue Trend"),       # cards own their visible title
+        html.P("$12.4M ▲ 3.2%"),
+    ])
 ```
 
-The cockpit guarantees the body container fills its grid cell vertically and scrolls when content overflows. Don't render your own border, title, or `padding: 16px` — that fights the chrome and produces double-frames.
+The cockpit guarantees the body container fills its grid cell and scrolls when content overflows. Don't render your own border or rounded-corner wrapper — that produces double-frames. The floating `…` menu sits in the top-right corner; avoid putting critical clickable content there.
 
 ### Three card surfaces: body, settings, actions
 
