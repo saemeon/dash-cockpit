@@ -177,7 +177,7 @@ def register_refresh_callbacks(
             return html.Div("(invalid trigger)")
         return _render_body_for(card_id)
 
-    # Refresh ⋮ action click — pattern-matching on the standard "_refresh"
+    # Refresh … action click — pattern-matching on the standard "_refresh"
     # action id auto-injected by ``card_chrome``. Re-uses the body re-render
     # path so ticks and clicks behave identically.
     @app.callback(

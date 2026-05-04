@@ -72,7 +72,7 @@ EDIT_MODE_CLASS = "cockpit-edit-mode"
 """CSS class applied to the page-content wrapper when edit mode is on."""
 
 CARD_MENU_CLASS = "cockpit-card-menu"
-"""CSS class on per-card ⋮ menu wrappers — hidden in CSS when not in edit mode."""
+"""CSS class on per-card … menu wrappers — hidden in CSS when not in edit mode."""
 
 SQUARE_CELL_FLOOR = 80
 """Floor on the auto-computed square-cell pixel size.
@@ -379,7 +379,7 @@ def register_edit_mode_callbacks(app) -> None:
     """Wire the app-level edit-mode toggle to grid drag/resize and menu visibility.
 
     When edit mode is **off** (default), every grid is locked
-    (``isDraggable=False``, ``isResizable=False``) and per-card ⋮ menus are
+    (``isDraggable=False``, ``isResizable=False``) and per-card … menus are
     hidden via CSS. When **on**, grids are unlocked and menus appear.
 
     Two clientside callbacks:

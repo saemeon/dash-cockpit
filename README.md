@@ -62,7 +62,7 @@ app.run(debug=True)
 
 ## Writing a card
 
-A card is any object with a `CARD_META` dict and a `render(context)` method. **Return only the body** — the cockpit draws the chrome (border, header with title and ⋮ menu, padding) around it.
+A card is any object with a `CARD_META` dict and a `render(context)` method. **Return only the body** — the cockpit draws the chrome (border, header with title and … menu, padding) around it.
 
 ```python
 from dash import html
@@ -108,9 +108,9 @@ Rules:
 - Returning a bare `Component` still works (treated as `{"body": Component}`) — backwards-compat for the simple case.
 - `actions` value is either a string (= label) or a dict with `label` plus extras (`href`, `disabled`, …). One mental model, terse common case, no helper import.
 - `CARD_META["actions"]` stays as the **static default** — used when render doesn't return an `"actions"` key. Static cards stay declarative; dynamic cards override per render.
-- The cockpit places each surface: `body` in the grid cell, `settings` in a side drawer (opened from the ⋮ menu), `actions` in the ⋮ menu.
+- The cockpit places each surface: `body` in the grid cell, `settings` in a side drawer (opened from the … menu), `actions` in the … menu.
 
-### Standard ⋮ items the cockpit auto-injects
+### Standard … items the cockpit auto-injects
 
 Three menu items are always reasoned-about by the cockpit; you don't need to declare them:
 
@@ -171,7 +171,7 @@ The boundary is between cards, not inside them. Within the body you return, anyt
 
 What's *not* supported is the inverse: callbacks reaching *across* cards, or global state shared between them. If three views must move together, ship them as one larger card. Per-card error isolation, deterministic card identity, and the iOS-widget mental model all depend on this.
 
-The cockpit owns the visual chrome — border, rounded corners, header bar with the `CARD_META["title"]`, the `⋮` menu (visible only in edit mode). Don't reproduce these inside your card body; you'll get double-frames.
+The cockpit owns the visual chrome — border, rounded corners, header bar with the `CARD_META["title"]`, the `…` menu (visible only in edit mode). Don't reproduce these inside your card body; you'll get double-frames.
 
 ## Team package contract
 
@@ -234,7 +234,7 @@ A spinner is shown during slow re-renders.
 
 ## Per-card menus
 
-Each card in the configurator renders a `⋮` dropdown for actions. Cards can opt into custom menu items by declaring `actions` in `CARD_META`:
+Each card in the configurator renders a `…` dropdown for actions. Cards can opt into custom menu items by declaring `actions` in `CARD_META`:
 
 ```python
 CARD_META = {

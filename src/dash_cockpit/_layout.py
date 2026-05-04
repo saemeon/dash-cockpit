@@ -59,7 +59,7 @@ def _resolve_card(
     # a slot dict with an "actions" key; otherwise the static default applies.
     # The settings slot itself is discarded here — the drawer re-renders the
     # card when the user opens it, so we only need to know *whether* there is
-    # one to decide on auto-injecting the Settings ⋮ item.
+    # one to decide on auto-injecting the Settings … item.
     return card_chrome(
         body,
         card_id=card_id,

@@ -23,8 +23,6 @@ from dash_cockpit._configurator import (
 from dash_cockpit._export import ExportBackend, export_page
 from dash_cockpit._layout import render_page
 from dash_cockpit._packing import (
-    CARD_MENU_CLASS,
-    EDIT_MODE_CLASS,
     EDIT_MODE_STORE_ID,
     EDIT_MODE_TOGGLE_ID,
     GRID_RESIZE_TICK_ID,
@@ -38,12 +36,9 @@ from dash_cockpit._presets import PresetStore
 from dash_cockpit._refresh import register_refresh_callbacks
 from dash_cockpit._registry import CardRegistry
 
-# Inline CSS shipped with every CockpitApp. Hides the per-card ⋮ menus
-# unless the page-content wrapper is in edit mode.
-_COCKPIT_CSS = f"""
-.{CARD_MENU_CLASS} {{ display: none; }}
-.{EDIT_MODE_CLASS} .{CARD_MENU_CLASS} {{ display: block; }}
-"""
+# The … menu is always visible — Refresh / About / Settings work outside
+# edit mode too. Edit mode only controls grid drag/resize (handled by
+# ``register_edit_mode_callbacks``). No CSS shipped with the app today.
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -200,11 +195,6 @@ class CockpitApp:
             suppress_callback_exceptions=True,
         )
         self._app.title = title
-        # Inline edit-mode CSS so card menus only appear in edit mode.
-        self._app.index_string = self._app.index_string.replace(
-            "{%css%}",
-            "{%css%}\n        <style>" + _COCKPIT_CSS + "</style>",
-        )
         self._app.layout = self._build_layout()
         self._register_callbacks()
         register_layout_callbacks(self._app)
@@ -338,7 +328,7 @@ class CockpitApp:
             content,
         ]
         # Standard-action surfaces: the About modal and Settings drawer are
-        # both always present (every card auto-gets the corresponding ⋮ items
+        # both always present (every card auto-gets the corresponding … items
         # via card_chrome — Settings only when the card returned a settings slot).
         children.append(build_about_modal())
         children.append(build_settings_drawer())

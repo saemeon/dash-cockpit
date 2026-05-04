@@ -1,7 +1,7 @@
 """Cockpit-owned card chrome — the standard frame around every card body.
 
 The cockpit is responsible for the *look* of a card (border, rounded corners,
-header bar with title and ⋮ menu). Teams provide only the *body* — the actual
+header bar with title and … menu). Teams provide only the *body* — the actual
 content of the card. This guarantees visual consistency across teams and
 removes "cards must use ``height: 100%``" footguns: the chrome owns the cell.
 
@@ -132,7 +132,7 @@ def build_about_modal() -> Component:
     """Build the empty app-level About modal added to :class:`CockpitApp`'s layout.
 
     The modal opens with content rendered server-side when any card's About
-    ⋮ action fires. Add to your layout once at app construction; one modal
+    … action fires. Add to your layout once at app construction; one modal
     serves every card.
     """
     return dbc.Modal(
@@ -149,7 +149,7 @@ def build_about_modal() -> Component:
 
 
 def register_about_callback(app, registry) -> None:
-    """Wire the About ⋮ standard action to the app-level modal.
+    """Wire the About … standard action to the app-level modal.
 
     One pattern-matching callback fires on every card's About click; the
     triggering ``card_id`` is parsed from ``callback_context``, the card's
@@ -223,7 +223,7 @@ def register_about_callback(app, registry) -> None:
 def build_settings_drawer() -> Component:
     """Build the empty app-level settings drawer added to :class:`CockpitApp`'s layout.
 
-    The drawer's body is populated server-side when any card's Settings ⋮
+    The drawer's body is populated server-side when any card's Settings …
     action fires; one drawer serves every card. The card's ``settings`` slot
     is re-rendered on each open, which keeps callback wiring simple (no
     duplicate IDs across body + settings copies).
@@ -239,7 +239,7 @@ def build_settings_drawer() -> Component:
 
 
 def register_settings_drawer_callback(app, registry, context_provider=None) -> None:
-    """Open the side drawer with a card's settings slot when its Settings ⋮ fires.
+    """Open the side drawer with a card's settings slot when its Settings … fires.
 
     Re-calls ``card.render(context)`` on each open and extracts the
     ``settings`` slot via :func:`unwrap_render_result`. Re-rendering avoids
@@ -325,7 +325,7 @@ def card_chrome(
     """Wrap a card body in the standard cockpit chrome.
 
     The chrome supplies the border, rounded corners, header bar with title
-    and ⋮ menu, and the body container that fills the remaining cell height.
+    and … menu, and the body container that fills the remaining cell height.
     Teams should never style their card with these themselves — that's the
     cockpit's job.
 
@@ -403,11 +403,12 @@ def card_chrome(
     if menu_items:
         menu_block = html.Div(
             dbc.DropdownMenu(
-                label="⋮",
+                label="…",
                 children=menu_items,
                 size="sm",
                 color="link",
                 align_end=True,
+                caret=False,
                 toggle_style=_MENU_TOGGLE_STYLE,
             ),
             className=CARD_MENU_CLASS,

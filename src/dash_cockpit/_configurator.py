@@ -234,7 +234,7 @@ def _render_card_tile(card: Any, context: RenderContext) -> Component:
 def render_working_list(
     cards: list[Any], columns: int = 12, context: RenderContext | None = None
 ) -> Component:
-    """Render the working list of cards as a draggable grid with ⋮ menus.
+    """Render the working list of cards as a draggable grid with … menus.
 
     Parameters
     ----------

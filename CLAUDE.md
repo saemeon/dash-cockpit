@@ -70,9 +70,9 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
 
 - **Phases 1–3.6 (foundations):** ✅ shipped.
   - **Phase 1 — Export wiring:** `TabularCard` / `DocumentCard` / `ChartCard` / `ExportBackend` protocols (all `runtime_checkable`, opt-in); `export_page()`; `CockpitApp(export_backends=...)` wires download button + format modal.
-  - **Phase 2 — Configurator:** `CardTemplate` + `ParameterSpec` (types `select` / `multi_select` / `number` / `date` / `text`); `options_fn` cascading dropdowns; deterministic `card_id_for(template_id, params)` for idempotent Add; multi-select `fanout_params` (one card per scalar value, cartesian product); `ConfiguratorPage` dispatch in `render_page`. Per-card `⋮` actions emitted as pattern-matching callback events.
+  - **Phase 2 — Configurator:** `CardTemplate` + `ParameterSpec` (types `select` / `multi_select` / `number` / `date` / `text`); `options_fn` cascading dropdowns; deterministic `card_id_for(template_id, params)` for idempotent Add; multi-select `fanout_params` (one card per scalar value, cartesian product); `ConfiguratorPage` dispatch in `render_page`. Per-card `…` actions emitted as pattern-matching callback events.
   - **Phase 3 — Drag-drop + sizing:** `dash-snap-grid` engine in [_packing.py](src/dash_cockpit/_packing.py); per-browser localStorage layout persistence; `CardMeta.size` flows into initial layout. `UserPage` stays on Bootstrap rows (its 2D `layout` is the source of truth — no drag-drop).
-  - **Phase 3.5 — Tier 1 polish:** edit-mode toggle (cards locked by default; ⋮ menus hidden via CSS); per-card auto-refresh via `CARD_META["refresh_interval"]` + pattern-matching `dcc.Interval`; `dcc.Loading` spinner around every body; `CARD_NO_DRAG_CLASS` constant + auto-cancel for `input`/`button`/`select`/`textarea`/`a`; configurable `resize_handles`.
+  - **Phase 3.5 — Tier 1 polish:** edit-mode toggle (cards locked by default; … menus hidden via CSS); per-card auto-refresh via `CARD_META["refresh_interval"]` + pattern-matching `dcc.Interval`; `dcc.Loading` spinner around every body; `CARD_NO_DRAG_CLASS` constant + auto-cancel for `input`/`button`/`select`/`textarea`/`a`; configurable `resize_handles`.
   - **Phase 3.6 — Slug routing:** each page at `/<slug>` (slug = `page.id` else slugified `name`); duplicate slugs raise `ValueError` at construction; `/` and unknown slugs resolve to the first page.
 - **Phase 4 — Preset library (M1):** ✅ shipped — generic group model.
   - `Preset(name, group, entries, layout?, description, metadata)`, JSON round-trippable, `(group, name)` composite key. `PresetStore` protocol with `list_presets` / `save` / `load(group, name)` / `delete(group, name)`. Storage-agnostic — implementations enforce group access control; permission violations raise `PermissionError`.
@@ -89,7 +89,7 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - Share button (configurator sidebar) builds a `?b=...` URL clientside (canonical-key JSON, urlsafe base64, no padding) and copies it to clipboard. Long-URL warning above ~2000 chars suggests a preset instead.
   - Status messages target `STATUS_ID` (always present) rather than `PRESET_STATUS_ID`, so URL hydration and Share work in deployments without a configured preset store.
 - **Phase 4.6 — Cockpit-owned card chrome:** ✅ shipped.
-  - New module `_chrome.py` defines `card_chrome(body, *, card_id, title, actions, extra_menu_items)` — the standard frame around every card body: border, rounded corners, header with title and ⋮ menu, body container with `flex: 1` + `overflow: auto`.
+  - New module `_chrome.py` defines `card_chrome(body, *, card_id, title, actions, extra_menu_items)` — the standard frame around every card body: border, rounded corners, header with title and … menu, body container with `flex: 1` + `overflow: auto`.
   - `_layout.py._resolve_card` and `_configurator.py._render_card_tile` both wrap card bodies in `card_chrome` instead of returning bare bodies. The configurator passes a "Remove" item via `extra_menu_items`.
   - Card protocol narrowed: `render(context)` returns the *body only*. Teams must not produce their own border, title, or outer padding — that's the cockpit's job. Existing demo cards updated (H6 titles + outer Divs removed).
   - Per-card menus now live in the chrome header (not absolute-positioned overlays). Edit-mode visibility CSS (`CARD_MENU_CLASS`) still applies.
@@ -100,11 +100,11 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - **`CockpitApp(content_max_width=1600)`.** Page-content area is capped (default 1600px) and centered, preventing card spread on ultra-wide monitors. `content_max_width=None` opts out (legacy `flex: 1` behaviour).
   - Grid margins tightened from `[10, 10]` to `[6, 6]` for a denser look.
   - Named-size vocabulary (`"small" / "wide" / "tall" / "medium" / ...`) is **not** shipped yet; deferred pending real usage signals (see `RESEARCH_NOTES.md` "Card sizing — options for later evaluation").
-- **Phase 4.9 — Slot-dict render + standard ⋮ actions (M3):** ✅ shipped.
+- **Phase 4.9 — Slot-dict render + standard … actions (M3):** ✅ shipped.
   - `Card.render(context)` may return either a bare `Component` (legacy, treated as `{"body": Component}`) or a slot dict: `{"body": Component, "settings": Component, "actions": dict}`. Body is required; settings and actions are optional.
   - New helper `unwrap_render_result` in `_card.py` does the dispatch; `error_boundary` now returns `(body, settings, actions)` so every render call site (`_layout`, `_configurator`, `_refresh`) handles the three surfaces uniformly.
   - **Action shape unified.** `_chrome._normalise_actions` accepts either the legacy `CARD_META["actions"]` list (`[{id, label}, ...]`) or the new render-time dict (`{id: str | {label, ...extras}}`). String value = label shorthand; dict value carries `label` plus extras (`href`, `disabled`).
-  - **Three standard ⋮ items auto-injected by `card_chrome`** (reserved IDs `_refresh`, `_about`, `_settings`):
+  - **Three standard … items auto-injected by `card_chrome`** (reserved IDs `_refresh`, `_about`, `_settings`):
     - **Refresh** — always present. Re-renders the card body via `register_refresh_callbacks`'s click handler (parallel `Input` to the M2 auto-refresh tick, sharing one render path).
     - **About** — always present. Opens an app-level `dbc.Modal` populated with `CARD_META["title"]` + `description` + `team` + optional `deep_link`. One modal serves every card.
     - **Settings** — appears iff the card returned a `settings` slot. Opens an app-level `dbc.Offcanvas` (right edge); the click callback re-calls `render(context)` and extracts the `settings` slot, avoiding duplicate-ID conflicts that twin-rendering would cause.

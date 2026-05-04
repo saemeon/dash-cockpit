@@ -104,7 +104,7 @@ Cards inside the grid get an **X close button** with the `no-drag` class so
 clicking close doesn't trigger drag. Removed cards re-appear in a "toolbox"
 strip above the grid; clicking adds them back.
 
-**Adoption:** matches our `⋮ → Remove` action. Their version is more visible
+**Adoption:** matches our `… → Remove` action. Their version is more visible
 (always-on X) but uglier. Ours is better as a default, but theirs is faster
 when iterating layouts. Could be a CSS toggle: "edit mode" turns on always-on
 remove handles.
@@ -139,7 +139,7 @@ back to the Grid output.
   + initial layouts need to be expressed per breakpoint.
 - **Edit mode toggle** — show always-on remove/resize handles when the user
   hits "Edit page". Mirrors how iOS widgets get jiggly when you hold-press.
-  Would replace our hidden ⋮ menu in places where it's not obvious.
+  Would replace our hidden … menu in places where it's not obvious.
 
 ---
 
@@ -169,7 +169,7 @@ Their `Card`:
 
 ### Card menu — what it includes
 
-Standard ⋮ menu items per card (always present, not opt-in like ours):
+Standard … menu items per card (always present, not opt-in like ours):
 
 - **Settings** — opens a drawer with `card.render_settings()` — full per-card
   settings UI. Cards declare what controls go in the drawer.
@@ -210,7 +210,7 @@ the card with new settings.
 **Adoption proposal:** add an optional `Card.render_settings(self) -> Component`
 method. If present, the cockpit:
 
-1. Adds a "Settings" item to the ⋮ menu.
+1. Adds a "Settings" item to the … menu.
 2. On click, opens a modal containing `card.render_settings()`.
 3. Setting controls write to a per-card session store
    (`{"type": "_cockpit_card_settings", "card_id": cid}`).
@@ -294,7 +294,7 @@ Per-card menu has four entries always present:
 4. **Delete** → removes from canvas.
 
 Compare to ours:
-- Our `⋮` shows only `Remove` (in configurator) or whatever the card
+- Our `…` shows only `Remove` (in configurator) or whatever the card
   declares in `actions`.
 - Settings: not implemented.
 - Duplicate: not implemented (templates instantiate; no clone of an
@@ -560,7 +560,7 @@ Sorted by impact × cost. Each item names a concrete code change.
 #### 1.1 Edit mode toggle
 
 **What:** a switch (or button) per page that flips `Grid.isDraggable` /
-`isResizable` and shows/hides the per-card ⋮ menus. Default: view-only.
+`isResizable` and shows/hides the per-card … menus. Default: view-only.
 
 **Why:** executives shouldn't accidentally rearrange. Today our default
 is editable; theirs is locked. Theirs is correct for the audience.

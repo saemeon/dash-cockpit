@@ -134,7 +134,7 @@ class CardMeta(TypedDict):
         localStorage.
     actions : list[dict], optional
         Per-card menu actions. Each entry is a mapping with ``id`` and
-        ``label`` keys; the cockpit renders them in the ⋮ dropdown and emits
+        ``label`` keys; the cockpit renders them in the … dropdown and emits
         pattern-matching callback events when clicked. The team app is
         responsible for handling those events.
 
@@ -225,7 +225,7 @@ class Card(Protocol):
         -------
         Component or dict
             The card's body, optionally with ``settings`` (drawer panel) and
-            ``actions`` (``⋮`` menu items overriding ``CARD_META["actions"]``).
+            ``actions`` (``…`` menu items overriding ``CARD_META["actions"]``).
         """
         ...
 
@@ -253,7 +253,7 @@ def unwrap_render_result(
         The card body — placed in the grid cell by the cockpit.
     settings : Component or None
         Optional settings panel — opened in the side drawer when the user
-        clicks ``⋮`` → "Settings". ``None`` when the card has no settings.
+        clicks ``…`` → "Settings". ``None`` when the card has no settings.
     actions : dict or None
         Optional render-time override for ``CARD_META["actions"]``. ``None``
         means "use the static default from CARD_META". An empty dict means
