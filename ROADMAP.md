@@ -18,7 +18,7 @@ This document is an honest picture of where the cockpit stands, what's still rou
 - **Export pipeline.** `TabularCard` / `DocumentCard` / `ChartCard` opt-in protocols, generic `ExportBackend`. Configurator-aware (exports the live working list, not the static `card_ids`).
 - **Preset library (M1).** Generic group-namespaced `Preset(name, group, entries, ...)`; `PresetStore` protocol; in-memory + filesystem implementations; three optional callable providers (visibility, writability, save target) with env-var defaults from `$COCKPIT_USER`. Seed presets are read-only and respect visibility. Layout snapshotting + delete UI deferred.
 - **Slug routing + shareable URLs (M1.5).** Pages at `/<slug>`; duplicates raise at startup. `?b=<base64>` (inline ad-hoc bundle) and `?preset=<group>/<name>` (deep-link via `PresetStore`). Share button copies `?b=` clientside. URL hydration is empty-only (never tramples edits) and silent on missing/invisible presets (no leak via URL probing).
-- **Card surfaces — body / settings / actions (M3).** `Card.render(context)` may return either a bare `Component` (legacy, treated as body-only) or a slot dict `{"body": ..., "settings": ..., "actions": {...}}`. The cockpit auto-injects three standard … items via `card_chrome`: **Refresh** (always — re-renders body via the M2 path), **About** (always — opens an app-level modal with title + description + team + optional `deep_link`), **Settings** (only when render returned a `settings` slot — opens a right-edge `dbc.Offcanvas` whose body is the re-rendered settings panel). Custom actions appear above standard items separated by a divider. `CARD_META["actions"]` stays valid as a static default.
+- **Card surfaces — body / settings / actions (M3).** `Card.render(context)` may return either a bare `Component` (legacy, treated as body-only) or a slot dict `{"body": ..., "settings": ..., "actions": {...}}`. The cockpit auto-injects three standard … items via `card_chrome`: **Refresh** (always — re-renders body via the M2 path), **About** (always — opens an app-level modal with title + description + team + optional `deep_link`), **Settings** (only when render returned a `settings` slot — opens a right-edge `dmc.Drawer` whose body is the re-rendered settings panel). Custom actions appear above standard items separated by a divider. `CARD_META["actions"]` stays valid as a static default.
 - **UI library — `dash-mantine-components` (M5.5).** Cockpit shell is `dmc.AppShell` (header + navbar + main); per-card `…` menu, About modal, and Settings drawer are all dmc; `pack_row` uses `dmc.Grid`; configurator forms use `dmc.Select` / `dmc.NumberInput` / `dmc.TextInput`; the whole tree is wrapped in `dmc.MantineProvider`. `dash-bootstrap-components` removed from dependencies.
 - **Demo app.** `examples/demo_cockpit/` with three teams (`team_finance`, `team_ops`, `team_sizes`); the **Size Sampler page** renders one tile per `(w, h)` from `1×1` up to `12×4` for visual size reference.
 
@@ -49,26 +49,25 @@ Today the cockpit is an in-process Dash app. For real corporate deployment we ne
 
 These are not deep design issues — they're "set up the boring infrastructure" tasks. Bundle into one phase when the cockpit is deployed in anger.
 
-### M5.5 — Port from `dash-bootstrap-components` to `dash-mantine-components` — ✅ shipped
+### M5.5 — Port to `dash-mantine-components` — ✅ shipped
 
-The cockpit's runtime UI is now fully on `dash-mantine-components`. `dash-bootstrap-components` is dropped from dependencies.
+See "Where we are today" above. `dash-bootstrap-components` removed from dependencies. Free wins still on the table: collapsible sidebar (one `AppShell.navbar` prop), dark-mode (`MantineProvider(theme=...)`), Mantine notifications (`dmc.NotificationContainer`).
 
-**Touched modules and what changed:**
+### M7 — Drag-from-palette card library (cardcanvas-style)
 
-- `_app.py`: hand-rolled flexbox shell → `dmc.AppShell` (header + navbar + main); export modal → `dmc.Modal` + `dmc.RadioGroup`; nav links → `dmc.NavLink` with a pattern-matching `active`-by-URL callback (replaces `dbc.NavLink(active="exact")`'s built-in behaviour); edit-mode switch → `dmc.Switch` (`checked` prop, not `value`).
-- `_chrome.py`: per-card `…` menu → `dmc.Menu` + `dmc.MenuTarget` + `dmc.MenuDropdown` + `dmc.MenuItem`; About modal → `dmc.Modal`; Settings drawer → `dmc.Drawer` (right-edge); the action-shape contract (`{id: str | dict}`) is unchanged so card authors are unaffected.
-- `_packing.py`: `pack_row` → `dmc.Grid` + `dmc.GridCol` (`UserPage` rows). 12-column system is identical to Bootstrap's so `col_width()` stays shape-stable.
-- `_configurator.py`: parameter form widgets (`dbc.Input` / `dcc.Dropdown`) → `dmc.NumberInput` / `dmc.TextInput` / `dmc.Select` / `dmc.MultiSelect`; sidebar buttons → `dmc.Button`. `dcc.DatePickerSingle` left as-is (Dash core).
-- `_presets.py`: save modal → `dmc.Modal`; preset picker → `dmc.Select` (`data` prop, not `options` — callback updated).
-- `CockpitApp.theme` is now `Optional[str] = None` (was `dbc.themes.BOOTSTRAP`). Pass a Bootstrap-theme URL only if your card bodies still rely on Bootstrap utility classNames.
-- The whole tree is wrapped in `dmc.MantineProvider` for Mantine's theming context.
+A palette section in `ConfiguratorPage`'s sidebar lists all registered cards as draggable previews; drop one onto the grid to add it. Complements the existing dropdown-form Add flow rather than replacing it: drag is best for bare cards (no parameters), the form is best for parameterized templates. Both write to the same working-list store.
 
-**Comes for free with the port (deferred until requested):**
+**Cheapest implementation path:** auto-promote each bare `Card` to a no-param `CardTemplate` so the working-list entry shape stays one form (`{template_id, params: {}}`); the palette is just a draggable view onto the registry. ~150 lines + tests.
 
-- Collapsible sidebar — one prop change on `AppShell` (`navbar={"breakpoint": "sm", "collapsed": {"mobile": True}}`).
-- Mantine's polished default visuals — modal/drawer transitions, focus rings, dark-mode readiness via `MantineProvider(theme=...)`.
+**Open questions before building:**
 
-**Tests:** 223 → 223 still passing. The handful of tests that introspected `dbc.*` types (`dbc.DropdownMenuItem`, `dbc.Modal`, `dcc.Dropdown` for the preset picker) were updated to introspect their dmc counterparts.
+- Does `dash-snap-grid` cleanly support drop-from-outside in our setup? CardCanvas uses `DraggableDiv` + drop handlers ([cardcanvas/ui.py:174–229](cardcanvas/cardcanvas/ui.py#L174-L229), [cardcanvas/main.py:657–696](cardcanvas/cardcanvas/main.py#L657-L696)) on the same engine, so probably yes — verify with a small spike first.
+- Palette discovery scope: all registered cards, or filtered by team / category / page-allowed-list?
+- Drop placement: at cursor vs. append-at-end (cardcanvas does at-cursor).
+
+**Why not now:** the configurator's dropdown-form flow is sufficient for the demo's needs and the "ship something visible" pressure isn't there yet. The discovery UX win (executives intuitively grab widgets, don't navigate dropdowns) is real but only matters once a real deployment surfaces it.
+
+**Bigger rethink it enables (deferred further):** the palette could become the primary add mechanism, demoting the dropdown-form flow to "edit parameters of a placed card". That's a configurator UX redesign, not a feature add — defer until the simple palette has shipped and felt out.
 
 ### M6 — Documentation & gallery
 
@@ -90,7 +89,7 @@ We decided **not** to adopt CardCanvas as our foundation. Now that the cockpit i
 | `Card` ABC with `render()` + `render_settings()` | `Card` Protocol with `render()` returning slot dict `{body, settings, actions}` (M3) | One mental model — the same dict shape covers static, settings-bearing, and dynamic-action cards. |
 | Drag-drop grid (`dash-snap-grid`) | Same engine, isolated in [_packing.py](dash-cockpit/src/dash_cockpit/_packing.py) | Identical capability, less coupling. |
 | Per-card menus | `CARD_META["actions"]` (static) or render-time `actions` slot (dynamic); plus auto-injected Refresh/About/Settings (M3) | Static + dynamic + cockpit-supplied standards in one menu. |
-| Settings drawer | App-level `dbc.Offcanvas`, auto-opened by Settings … when card returned a `settings` slot (M3) | Shipped. |
+| Settings drawer | App-level `dmc.Drawer`, auto-opened by Settings … when card returned a `settings` slot (M3) | Shipped. |
 | Share-by-URL | `?b=` and `?preset=` (M1.5) | Different shape: bundles of cards, not single cards. |
 | Auto-refresh `interval` | `CARD_META["refresh_interval"]` (M2) + manual Refresh … (M3) | Shipped. |
 | Card gallery / picker | `ConfiguratorPage` | Different model — we pick from templates, not card classes. |
@@ -118,25 +117,13 @@ These aren't features so much as load-bearing decisions that affect everything d
 
 When that happens, the work is: pick a convention, migrate demo IDs, add alias resolution in `CardRegistry.get` (look up by id, fall back to checking `aliases` lists), document it in the team contract.
 
-### 3. Versioning of cards and templates
+### 3. Versioning of cards and templates — deferred (discipline, not framework)
 
-A team ships v1 of `revenue_card`. Six months later, the data shape changes. v2 is incompatible.
+A team ships v1 of `revenue_card`. Six months later, the data shape changes. The agreed convention: cards stay at one ID (team owns backwards-compatible data); incompatible changes ship as a new ID (`revenue_trend_v2`); page authors migrate explicitly. No framework support needed — document it loudly in the team contract (#4) when that lands.
 
-**Pin down:**
+### 4. The team contract — deferred (write when first external team onboards)
 
-- Cards stay at one ID — the team is responsible for backwards-compatible data.
-- For incompatible changes, ship as a new ID (`revenue_trend_v2`) and let the page author migrate explicitly.
-- This is a discipline not a framework feature; document it loudly in the team contract.
-
-### 4. The team contract — what counts as "publishing a card"
-
-Today a team package needs `get_cards()` (and optionally `get_card_templates()`). That's enough but vague.
-
-**Pin down:** a published `cockpit_team_contract.md` with:
-
-- The exact return type of `get_cards()`.
-- What can change without a major version bump (data shape inside cards) vs. what counts as breaking (id, action ids, parameter shapes).
-- Test scaffolding teams should run before shipping (e.g. `cockpit-cli validate <package>`).
+A `cockpit_team_contract.md` should pin down: the exact return type of `get_cards()`; what's a backwards-compatible change (data shape inside cards) vs. a breaking one (id, action ids, parameter shapes); the test scaffolding teams should run before shipping (e.g. a `cockpit-cli validate <package>` command). Premature today — write it when the first non-demo team is on the hook to consume it.
 
 ### 5. Layout state versioning — deferred (versioning-by-key already in place)
 
@@ -172,22 +159,18 @@ Subprocess-per-team isolation remains deferred — premature given typical deplo
 
 ### 8. Configuration surface
 
-`CockpitApp.__init__` already takes `registry`, `pages`, `title`, `theme`, `export_backends`. The next things teams will ask for:
+`CockpitApp.__init__` already takes `registry`, `pages`, `title`, `theme`, `export_backends`, `preset_store`, `content_max_width`. The list will keep growing — the next things teams will ask for: custom CSS / a Mantine theme override, logo / branding in the navbar, a custom 404 / error page, auth config.
 
-- Custom CSS (today: pass via `theme`, but only Bootstrap themes work).
-- Logo / branding in the sidebar.
-- Custom 404 / error page.
-- Auth config.
-
-**Pin down:** a single `CockpitConfig` dataclass replacing the kwargs. Easier to extend without breaking existing code:
+**Pin down:** a single `CockpitConfig` dataclass replacing the kwargs:
 
 ```python
 @dataclass
 class CockpitConfig:
     title: str = "Cockpit"
-    theme: str = dbc.themes.BOOTSTRAP
+    theme: dict | None = None         # passed to dmc.MantineProvider
     custom_css: list[str] = field(default_factory=list)
     logo_url: str | None = None
+    content_max_width: int | None = 1600
     auth: AuthConfig | None = None
     # ...future fields here
 ```
@@ -212,7 +195,7 @@ class CockpitConfig:
 | **Robust to slow cards** | ❌ | Render timeout — pin down #6 |
 | **Robust to bad team packages** | ✅ | Pin-down #7 (per-package try/except in `load_packages`, failures via `registry.failures()`) |
 | **Robust to layout schema drift** | ➖ | Versioning-by-key (`persist_key` prefix bump) is in place; full migration deferred — pin-down #5 |
-| **Versionable cards/templates** | ➖ | Pin-downs #2 and #3 deferred — revisit on first rename / multi-deployment |
+| **Versionable cards/templates** | ➖ | Pin-downs #2, #3, #4 all deferred — discipline-only, revisit on first rename / first external team |
 
 ---
 
@@ -222,14 +205,14 @@ Pin-down status:
 
 - **#1 (`RenderContext`)** — ✅ resolved.
 - **#7 (package import isolation)** — ✅ resolved.
-- **#5 (layout-state versioning)** — ➖ deferred (versioning-by-key is sufficient).
-- **#2 (card-id namespacing)** — ➖ deferred (no production deployments yet; revisit on first rename or second deployment).
-- **#3, #4, #6, #8** — not yet looked at; see sections above.
+- **#2, #3, #4, #5** — ➖ consciously deferred (see each section for the trigger that should bring them back on the table).
+- **#6 (failure budget — render timeouts)** — open, real engineering left to do.
+- **#8 (`CockpitConfig` dataclass)** — open, cheap; do it before the kwargs list grows further.
 
-With the load-bearing decisions either resolved or consciously deferred, the next session can either:
+The load-bearing decisions are resolved or consciously deferred. Next session can either:
 
-- Pick up smaller carry-overs (preset delete UI, layout snapshotting in presets — both ~1 hour each).
-- Tackle the still-open pin-downs (#6 failure budget — render timeouts; #8 `CockpitConfig` dataclass for kwargs consolidation).
+- Pick up smaller carry-overs: preset delete UI, layout snapshotting in presets, collapsible sidebar (one `AppShell.navbar` prop) — all ~1 hour each.
+- Tackle the still-open pin-downs: #8 first (small, additive), #6 second (real engineering — render timeouts + payload-size warnings + circuit breaker).
 - Or move into M4 / M5 / M6 territory once a real deployment provides concrete pressure.
 
 Defer M4 (`dash-fn-form` swap), M5 (auth/logging/caching), M6 (MkDocs) until the cockpit is deployed in anger. Premature investment there is a recipe for rewriting good infrastructure for fictional needs.

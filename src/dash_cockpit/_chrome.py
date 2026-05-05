@@ -50,11 +50,16 @@ _CARD_STYLE = {
 _BODY_STYLE = {
     "height": "100%",
     "padding": "12px",
-    "overflow": "auto",
+    # Cards are widgets, not scroll containers — overflow is hidden, not auto.
+    # The iOS / macOS widget model is "fixed pixel size, fits or doesn't" and
+    # we follow that. If a card's natural content is taller than its cell, the
+    # answer is to declare a larger CARD_META["size"] or show less, not to
+    # scroll. Avoiding overflow: auto also kills phantom scrollbars from
+    # 1-pixel overflows in the body wrapper chain (dcc.Loading + the
+    # wrap_for_refresh Div), which several macOS users were seeing.
+    "overflow": "hidden",
     # border-box so padding eats into the declared height rather than
-    # adding to it. Without this, body renders 24px taller than the card's
-    # content area and overflow:auto draws a phantom scrollbar even when
-    # the card has nothing to scroll.
+    # adding to it.
     "boxSizing": "border-box",
 }
 

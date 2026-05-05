@@ -7,6 +7,8 @@ from dash_cockpit._configurator import (
     FORM_ID,
     TEMPLATE_PICKER_ID,
     WORKING_LIST_STORE_ID,
+    _coerce_param,
+    _params_from_callback,
     configurator_export_data,
     instantiate_working_list,
     render_configurator,
@@ -297,3 +299,102 @@ def test_card_actions_show_in_tile_menu():
     # The menu should include the action labels
     assert "Refresh" in str(rendered)
     assert "Settings" in str(rendered)
+
+
+# ---------------------------------------------------------------------------
+# _coerce_param + _params_from_callback — round-trip from dmc string to spec type
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_param_select_int_round_trip():
+    spec = ParameterSpec(
+        name="year", label="Year", type="select", options=[2024, 2025], default=2025
+    )
+    assert _coerce_param(spec, "2025") == 2025
+    assert _coerce_param(spec, "2024") == 2024
+    # Unknown value passes through (rare race during template swap).
+    assert _coerce_param(spec, "9999") == "9999"
+
+
+def test_coerce_param_select_string_pass_through():
+    spec = ParameterSpec(
+        name="metric",
+        label="Metric",
+        type="select",
+        options=["revenue", "ebitda"],
+        default="revenue",
+    )
+    assert _coerce_param(spec, "revenue") == "revenue"
+
+
+def test_coerce_param_multi_select_int_round_trip():
+    spec = ParameterSpec(
+        name="years",
+        label="Years",
+        type="multi_select",
+        options=[2024, 2025, 2026],
+        default=[],
+    )
+    assert _coerce_param(spec, ["2024", "2026"]) == [2024, 2026]
+
+
+def test_coerce_param_multi_select_unknown_pass_through():
+    spec = ParameterSpec(
+        name="years",
+        label="Years",
+        type="multi_select",
+        options=[2024, 2025],
+        default=[],
+    )
+    # Mix of known and unknown values — knowns coerce, unknowns pass.
+    assert _coerce_param(spec, ["2025", "stale"]) == [2025, "stale"]
+
+
+def test_coerce_param_number_int_when_integral():
+    spec = ParameterSpec(name="n", label="N", type="number", default=10)
+    assert _coerce_param(spec, "10") == 10
+    assert _coerce_param(spec, 10) == 10
+
+
+def test_coerce_param_number_float_when_not_integral():
+    spec = ParameterSpec(name="r", label="Rate", type="number", default=0.5)
+    assert _coerce_param(spec, "1.5") == 1.5
+
+
+def test_coerce_param_number_garbage_passes_through():
+    spec = ParameterSpec(name="n", label="N", type="number", default=0)
+    assert _coerce_param(spec, "not-a-number") == "not-a-number"
+
+
+def test_coerce_param_text_pass_through():
+    spec = ParameterSpec(name="title", label="Title", type="text", default="")
+    assert _coerce_param(spec, "hello") == "hello"
+
+
+def test_coerce_param_none_pass_through():
+    spec = ParameterSpec(
+        name="year", label="Year", type="select", options=[2024, 2025]
+    )
+    assert _coerce_param(spec, None) is None
+    assert _coerce_param(spec, "") == ""
+
+
+def test_params_from_callback_pairs_ids_and_coerces():
+    template = _KpiTemplate()
+    ids = [{"name": "year"}, {"name": "metric"}, {"name": "division"}]
+    values = ["2025", "revenue", ["EMEA", "APAC"]]
+    out = _params_from_callback(template, ids, values)
+    # year coerced int (matches options=[2024, 2025])
+    assert out["year"] == 2025
+    # metric stays string (matches options=["revenue", "ebitda"])
+    assert out["metric"] == "revenue"
+    # division (multi_select) stays list of strings
+    assert out["division"] == ["EMEA", "APAC"]
+
+
+def test_params_from_callback_unknown_name_passes_through():
+    template = _KpiTemplate()
+    ids = [{"name": "year"}, {"name": "ghost"}]
+    values = ["2024", "raw"]
+    out = _params_from_callback(template, ids, values)
+    assert out == {"year": 2024, "ghost": "raw"}

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import dash
 import dash_mantine_components as dmc
 from dash import ALL, Input, Output, State, dcc, html, no_update
+
+if TYPE_CHECKING:
+    from dash.development.base_component import Component
 
 from dash_cockpit._chrome import (
     build_about_modal,
@@ -36,9 +39,8 @@ from dash_cockpit._presets import PresetStore
 from dash_cockpit._refresh import register_refresh_callbacks
 from dash_cockpit._registry import CardRegistry
 
-# The … menu is always visible — Refresh / About / Settings work outside
-# edit mode too. Edit mode only controls grid drag/resize (handled by
-# ``register_edit_mode_callbacks``). No CSS shipped with the app today.
+# No app-level CSS — Mantine handles all the visual styling and dcc.Link
+# handles routing, so we don't need anything custom.
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -64,17 +66,27 @@ def _page_slug(page: Page) -> str:
 _NAV_LINK_TYPE = "_cockpit_nav"
 
 
-def _nav_link(page: Page, slug: str) -> dmc.NavLink:
+def _nav_link(page: Page, slug: str) -> Component:
     """Build one sidebar nav link pointing at ``/<slug>``.
 
-    ``active`` is driven server-side by a pattern-matching callback that
-    watches ``dcc.Location`` — see :meth:`CockpitApp._register_callbacks`.
+    ``dmc.NavLink`` (Mantine's sidebar item) provides the visual; ``dcc.Link``
+    handles the routing. ``dcc.Link`` does the actual URL update via the
+    History API; ``dmc.NavLink`` renders inside it. With
+    ``dcc.Location(refresh=False)`` set on the app shell, no full page reload
+    happens and the click resolves cleanly.
+
+    ``active`` is server-side, driven by a pattern-matching callback watching
+    ``dcc.Location.pathname`` — see :meth:`CockpitApp._register_callbacks`.
     """
-    return dmc.NavLink(
-        label=page.name,
+    return dcc.Link(
+        dmc.NavLink(
+            label=page.name,
+            id={"type": _NAV_LINK_TYPE, "slug": slug},
+            active=False,
+        ),
         href=f"/{slug}",
-        id={"type": _NAV_LINK_TYPE, "slug": slug},
-        active=False,
+        refresh=False,
+        style={"textDecoration": "none", "color": "inherit", "display": "block"},
     )
 
 
@@ -330,7 +342,12 @@ class CockpitApp:
         )
 
         siblings: list[Any] = [
-            dcc.Location(id="_cockpit_url"),
+            # refresh=False so pathname updates from dcc.Link don't trigger
+            # a full page reload — the page-content callback re-renders just
+            # the active page's content. With the default refresh=True, the
+            # interaction with the dmc.AppShell layout produces a "navigates
+            # briefly then snaps back" symptom.
+            dcc.Location(id="_cockpit_url", refresh=False),
             # Persisted edit-mode state — survives reloads.
             dcc.Store(
                 id=EDIT_MODE_STORE_ID,
@@ -391,10 +408,10 @@ class CockpitApp:
         return ctx
 
     def _register_callbacks(self) -> None:
-        # dmc.NavLink doesn't auto-detect the current URL like dbc.NavLink's
-        # active="exact" did — we drive `active` via this pattern-matching
-        # callback. Falls back to the first slug for ``/`` and unknown paths,
-        # matching :meth:`_resolve_page`.
+        # Active-state for the sidebar — toggle ``dmc.NavLink.active`` on
+        # the link whose slug matches the current pathname. Falls back to
+        # the first slug for ``/`` and unknown paths, matching
+        # :meth:`_resolve_page`.
         @self._app.callback(
             Output({"type": _NAV_LINK_TYPE, "slug": ALL}, "active"),
             Input("_cockpit_url", "pathname"),

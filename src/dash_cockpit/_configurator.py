@@ -89,19 +89,23 @@ def _field_component(
     else:
         value = spec.default
 
-    data = [{"label": str(o), "value": o} for o in options]
+    # Mantine v7 (dmc 2.6+) requires Select/MultiSelect option values to be
+    # strings — passing ints/bools/etc. raises "Option value must be a string".
+    # We stringify here for display and round-trip back to the original type
+    # in :func:`_coerce_param` when params flow into the template.
+    data = [{"label": str(o), "value": str(o)} for o in options]
     if spec.type == "select":
         widget = dmc.Select(
             id=param_input_id(spec.name),
             data=data,
-            value=value,
+            value=str(value) if value is not None else None,
             clearable=not spec.required,
         )
     elif spec.type == "multi_select":
         widget = dmc.MultiSelect(
             id=param_input_id(spec.name),
             data=data,
-            value=value or [],
+            value=[str(v) for v in (value or [])],
         )
     elif spec.type == "number":
         widget = dmc.NumberInput(
@@ -121,6 +125,74 @@ def _field_component(
             value=value or "",
         )
     return html.Div([label, widget], className="mb-3")
+
+
+def _coerce_param(spec: ParameterSpec, value: Any) -> Any:
+    """Convert a dmc widget's string-valued output back to the spec's type.
+
+    Mantine's ``Select`` / ``MultiSelect`` only accept string option values,
+    so we stringify on the way in (see :func:`_field_component`). On the way
+    back, we look up the original-typed value from ``spec.options`` by
+    string match. ``number`` values are parsed as int (when the float is
+    integral) or float. Other types pass through.
+
+    Parameters
+    ----------
+    spec : ParameterSpec
+        The parameter being read; carries ``type`` and ``options``.
+    value : Any
+        The raw value as returned by the dmc widget — typically a string for
+        Select, a list of strings for MultiSelect, a number for NumberInput.
+
+    Returns
+    -------
+    Any
+        The value coerced to the type the template author wrote in
+        ``spec.options`` (or left as-is if unrecognised).
+    """
+    if value is None or value == "":
+        return value
+    if spec.type == "select":
+        for o in spec.options or []:
+            if str(o) == str(value):
+                return o
+        return value
+    if spec.type == "multi_select":
+        if not isinstance(value, list):
+            return value
+        opts = spec.options or []
+        out = []
+        for v in value:
+            match = next((o for o in opts if str(o) == str(v)), v)
+            out.append(match)
+        return out
+    if spec.type == "number":
+        try:
+            f = float(value)
+            return int(f) if f.is_integer() else f
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def _params_from_callback(
+    template: CardTemplate,
+    ids: list[dict[str, Any]],
+    values: list[Any],
+) -> dict[str, Any]:
+    """Collect dmc-returned values into a typed params dict for ``template``.
+
+    Pairs each pattern-matching id ``{"name": ...}`` with its value and runs
+    :func:`_coerce_param` using the matching ``ParameterSpec``. Names that
+    don't appear in the template's parameter list pass through untouched.
+    """
+    specs_by_name = {p.name: p for p in template.TEMPLATE_META.parameters}
+    out: dict[str, Any] = {}
+    for i, v in zip(ids, values, strict=False):
+        name = i["name"]
+        spec = specs_by_name.get(name)
+        out[name] = _coerce_param(spec, v) if spec is not None else v
+    return out
 
 
 def render_parameter_form(
@@ -463,7 +535,7 @@ def register_configurator_callbacks(
             tpl = registry.get_template(template_id)
         except Exception:
             return no_update
-        params = {i["name"]: v for i, v in zip(ids, param_values, strict=False)}
+        params = _params_from_callback(tpl, ids, param_values)
         return render_parameter_form(tpl, current_params=params)
 
     @app.callback(
@@ -497,7 +569,7 @@ def register_configurator_callbacks(
                 tpl = registry.get_template(template_id)
             except KeyError:
                 return no_update, f"Unknown template: {template_id}"
-            params = {i["name"]: v for i, v in zip(ids, values, strict=False)}
+            params = _params_from_callback(tpl, ids, values)
             missing = [
                 p.name
                 for p in tpl.TEMPLATE_META.parameters
