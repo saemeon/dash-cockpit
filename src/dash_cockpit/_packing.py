@@ -3,7 +3,8 @@
 Isolating layout here keeps :mod:`_layout` and :mod:`_configurator` engine-agnostic.
 Currently:
 
-- :func:`pack_row` uses Bootstrap row/col (used by ``UserPage``'s 2D ``layout``).
+- :func:`pack_row` uses :class:`dmc.Grid` / :class:`dmc.GridCol`
+  (``UserPage``'s 2D ``layout`` — fixed rows, no drag-drop).
 - :func:`pack_grid` uses ``dash-snap-grid``'s :class:`~dash_snap_grid.Grid` for
   drag-drop + resize, with localStorage persistence wired by
   :func:`register_layout_callbacks`.
@@ -66,13 +67,7 @@ EDIT_MODE_TOGGLE_ID = "_cockpit_edit_mode_toggle"
 """ID of the sidebar toggle that flips edit mode on/off."""
 
 PAGE_CONTENT_ID = "_cockpit_page_content"
-"""ID of the page-content wrapper used as the edit-mode className target."""
-
-EDIT_MODE_CLASS = "cockpit-edit-mode"
-"""CSS class applied to the page-content wrapper when edit mode is on."""
-
-CARD_MENU_CLASS = "cockpit-card-menu"
-"""CSS class on per-card … menu wrappers — hidden in CSS when not in edit mode."""
+"""ID of the page-content wrapper that ``CockpitApp`` re-renders per page."""
 
 SQUARE_CELL_FLOOR = 80
 """Floor on the auto-computed square-cell pixel size.
@@ -127,8 +122,8 @@ def layout_store_id(key: str) -> dict[str, str]:
 def col_width(n: int) -> int:
     """Column span (out of 12) for ``n`` equal columns per row.
 
-    Mantine's ``dmc.Grid`` and Bootstrap's ``dbc.Row`` both use a 12-unit
-    grid system, so this helper is shape-stable across the M5.5 port.
+    Mantine's :class:`dmc.Grid` uses a 12-unit grid, matching the standard
+    in :class:`dmc.GridCol` ``span``.
 
     Parameters
     ----------
@@ -390,8 +385,7 @@ def register_edit_mode_callbacks(app) -> None:
     - **Toggle** writes the boolean to the edit-mode :class:`dcc.Store`
       whenever the toolbar switch is clicked.
     - **Apply** reads the store and writes ``isDraggable``/``isResizable``
-      to every grid (pattern-matching ALL) plus a CSS class on the
-      page-content wrapper.
+      to every grid (pattern-matching ALL).
 
     Parameters
     ----------
@@ -418,19 +412,17 @@ def register_edit_mode_callbacks(app) -> None:
         State(EDIT_MODE_STORE_ID, "data"),
     )
 
-    # Apply edit-mode state to every grid + the page-content wrapper.
+    # Apply edit-mode state to every grid (drag/resize on or off).
     app.clientside_callback(
-        f"""
-        function(editMode, gridIds) {{
+        """
+        function(editMode, gridIds) {
             const enabled = Boolean(editMode);
             const gridStates = (gridIds || []).map(() => enabled);
-            const className = enabled ? '{EDIT_MODE_CLASS}' : '';
-            return [gridStates, gridStates, className];
-        }}
+            return [gridStates, gridStates];
+        }
         """,
         Output({"type": GRID_ID_TYPE, "key": ALL}, "isDraggable"),
         Output({"type": GRID_ID_TYPE, "key": ALL}, "isResizable"),
-        Output(PAGE_CONTENT_ID, "className"),
         Input(EDIT_MODE_STORE_ID, "data"),
         State({"type": GRID_ID_TYPE, "key": ALL}, "id"),
     )

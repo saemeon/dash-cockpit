@@ -79,9 +79,6 @@ def _field_component(
             options = spec.options_fn(current_params or {}) or []
         except Exception:
             options = spec.options or []
-    label = html.Label(
-        spec.label, htmlFor=str(param_input_id(spec.name)), className="form-label"
-    )
 
     # current value wins over the static default when present
     if current_params and spec.name in current_params:
@@ -97,6 +94,7 @@ def _field_component(
     if spec.type == "select":
         widget = dmc.Select(
             id=param_input_id(spec.name),
+            label=spec.label,
             data=data,
             value=str(value) if value is not None else None,
             clearable=not spec.required,
@@ -104,27 +102,33 @@ def _field_component(
     elif spec.type == "multi_select":
         widget = dmc.MultiSelect(
             id=param_input_id(spec.name),
+            label=spec.label,
             data=data,
             value=[str(v) for v in (value or [])],
         )
     elif spec.type == "number":
         widget = dmc.NumberInput(
             id=param_input_id(spec.name),
+            label=spec.label,
             value=value,
         )
     elif spec.type == "date":
-        # dcc.DatePickerSingle is part of Dash core, not Bootstrap; leaving
-        # it intact rather than churning over to dmc.DatePickerInput.
-        widget = dcc.DatePickerSingle(
-            id=param_input_id(spec.name),
-            date=value,
+        # dcc.DatePickerSingle is Dash-core; it has no built-in label so we
+        # render one separately. Stack handles the gap.
+        widget = dmc.Stack(
+            [
+                dmc.Text(spec.label, size="sm", fw=500),
+                dcc.DatePickerSingle(id=param_input_id(spec.name), date=value),
+            ],
+            gap=4,
         )
     else:  # "text" or fallback
         widget = dmc.TextInput(
             id=param_input_id(spec.name),
+            label=spec.label,
             value=value or "",
         )
-    return html.Div([label, widget], className="mb-3")
+    return dmc.Box(widget, mb="md")
 
 
 def _coerce_param(spec: ParameterSpec, value: Any) -> Any:
@@ -220,9 +224,7 @@ def render_parameter_form(
         for p in template.TEMPLATE_META.parameters
     ]
     if not fields:
-        fields = [
-            html.Div("This template takes no parameters.", className="text-muted")
-        ]
+        fields = [dmc.Text("This template takes no parameters.", c="dimmed")]
     return html.Div(fields)
 
 
@@ -292,7 +294,6 @@ def _render_card_tile(card: Any, context: RenderContext) -> Component:
     return card_chrome(
         body,
         card_id=cid,
-        title=card.CARD_META.get("title", ""),
         actions=actions_override
         if actions_override is not None
         else card.CARD_META.get("actions"),
@@ -327,9 +328,10 @@ def render_working_list(
     if context is None:
         context = {}
     if not cards:
-        return html.Div(
+        return dmc.Text(
             "No cards yet. Pick a template, set parameters, and click Add.",
-            className="text-muted p-4",
+            c="dimmed",
+            p="lg",
         )
     tiles = [_render_card_tile(c, context) for c in cards]
     ids = [c.CARD_META["id"] for c in cards]
@@ -387,10 +389,11 @@ def render_configurator(
         available_templates.append(tpl)
 
     if not available_templates:
-        return html.Div(
+        return dmc.Text(
             f"No templates registered for page {page.name!r}. "
             f"Expected: {page.template_ids}",
-            className="text-warning p-4",
+            c="yellow",
+            p="lg",
         )
 
     options = [
@@ -412,9 +415,9 @@ def render_configurator(
         sidebar_children.append(html.Hr())
     sidebar_children.extend(
         [
-            html.H6("Template", className="mb-2"),
             dmc.Select(
                 id=TEMPLATE_PICKER_ID,
+                label="Template",
                 data=options,
                 value=initial_template.TEMPLATE_META.id,
                 clearable=False,
@@ -430,7 +433,7 @@ def render_configurator(
                 gap="xs",
                 mt="md",
             ),
-            html.Div(id=STATUS_ID, className="text-muted small mt-2"),
+            dmc.Text(id=STATUS_ID, c="dimmed", size="sm", mt="xs"),
         ]
     )
     sidebar = html.Div(
@@ -516,18 +519,18 @@ def register_configurator_callbacks(
         ctx = callback_context
         if not ctx.triggered:
             return no_update
-        trigger = ctx.triggered[0]["prop_id"]
+        # Compare against the id-component only (before the dot) — startswith
+        # would silently match any future id sharing this prefix.
+        trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
         # Template picker changed
-        if trigger.startswith(TEMPLATE_PICKER_ID):
+        if trigger_id == TEMPLATE_PICKER_ID:
             if not template_id:
                 return no_update
             try:
                 tpl = registry.get_template(template_id)
             except KeyError:
-                return html.Div(
-                    f"Unknown template: {template_id}", className="text-danger"
-                )
+                return dmc.Text(f"Unknown template: {template_id}", c="red")
             return render_parameter_form(tpl)
 
         # Parameter values changed
@@ -556,13 +559,17 @@ def register_configurator_callbacks(
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
-        trigger = ctx.triggered[0]["prop_id"]
+        prop_id = ctx.triggered[0]["prop_id"]
+        # Id-component only — split off the property name. Used for both
+        # plain-string ids (Add / Clear buttons) and pattern-matching dict
+        # ids (the Remove menu items, parsed as JSON below).
+        trigger_id = prop_id.split(".")[0]
         current = current or []
 
-        if trigger.startswith(CLEAR_BTN_ID):
+        if trigger_id == CLEAR_BTN_ID:
             return [], "Cleared."
 
-        if trigger.startswith(ADD_BTN_ID):
+        if trigger_id == ADD_BTN_ID:
             if not template_id:
                 return no_update, "Pick a template first."
             try:
@@ -584,12 +591,11 @@ def register_configurator_callbacks(
                 return no_update, "Already in working list."
             return [*current, new_entry], "Added."
 
-        # Remove triggered
+        # Remove triggered — trigger_id is the JSON-stringified pattern id.
         import json as _json
 
         try:
-            payload = _json.loads(trigger.rsplit(".", 1)[0])
-            target = payload.get("card_id")
+            target = _json.loads(trigger_id).get("card_id")
         except (ValueError, KeyError):
             return no_update, no_update
         if not target:

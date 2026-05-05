@@ -56,51 +56,6 @@ class RenderContext(TypedDict):
     request_id: NotRequired[str]
 
 
-class RenderContext(TypedDict):
-    """Per-render context passed to every :meth:`Card.render` call.
-
-    A frozen contract. Adding fields is forward-compatible; removing or
-    renaming fields breaks every team that has read them. All fields are
-    ``NotRequired`` so the cockpit can omit any it cannot supply (e.g.
-    ``user`` before auth is wired); cards must treat every key as optional
-    and supply their own defaults.
-
-    Parameters
-    ----------
-    user : dict, optional
-        Authenticated user. Populated by auth middleware when configured;
-        absent in unauthenticated deployments. Shape is auth-backend-defined
-        but should at minimum contain ``"id"`` and ``"email"`` when present.
-        Cards filtering on identity must handle the missing case.
-    locale : str, optional
-        BCP-47 language tag (e.g. ``"en"``, ``"de-CH"``). Drives number
-        and date formatting in cards. Defaults to ``"en"`` when absent.
-    page_filters : dict, optional
-        Page-scoped filter state (e.g. ``{"date_range": [...], "division": "EMEA"}``).
-        Set by the page, not the card. Cards must not write here. Currently
-        always absent — reserved for a future filter-bar feature.
-    request_id : str, optional
-        Opaque correlation id for tracing one user request across logs and
-        downstream service calls. Cards should propagate it on outbound HTTP.
-
-    Notes
-    -----
-    Cards must read defensively::
-
-        def render(context: RenderContext):
-            user = context.get("user") or {}
-            locale = context.get("locale", "en")
-
-    Reading ``context["user"]`` directly will raise ``KeyError`` in
-    deployments without auth.
-    """
-
-    user: NotRequired[dict]
-    locale: NotRequired[str]
-    page_filters: NotRequired[dict]
-    request_id: NotRequired[str]
-
-
 class CardMeta(TypedDict):
     """Metadata every card must declare on its ``CARD_META`` attribute.
 
@@ -122,9 +77,8 @@ class CardMeta(TypedDict):
     description : str
         Short prose description for menus and tooltips.
     refresh_interval : int
-        Auto-refresh cadence in seconds. ``0`` disables auto-refresh.
-        Currently informational only — auto-refresh wiring is not yet
-        implemented (see Phase 3 in the design doc).
+        Auto-refresh cadence in seconds — the cockpit re-renders the card
+        body on this interval (wired in :mod:`_refresh`). ``0`` disables.
     category : str
         Free-form category tag for grouping (e.g. ``"finance"``, ``"ops"``).
     size : tuple[int, int], optional
@@ -133,10 +87,14 @@ class CardMeta(TypedDict):
         Users can drag/resize at runtime; the new size is persisted in
         localStorage.
     actions : list[dict], optional
-        Per-card menu actions. Each entry is a mapping with ``id`` and
-        ``label`` keys; the cockpit renders them in the … dropdown and emits
-        pattern-matching callback events when clicked. The team app is
-        responsible for handling those events.
+        Per-card menu actions — the static-default form. Each entry is a
+        mapping with ``id`` and ``label`` keys. The cockpit renders them as
+        items in the per-card ``…`` menu (above the auto-injected Refresh /
+        About / Settings standard items, separated by a divider) and routes
+        clicks via pattern-matching callbacks the team registers against
+        the well-known action id. Cards that need *render-time* control of
+        their menu can return an ``"actions"`` slot from ``render`` instead;
+        see the slot-dict shape in :class:`Card.render`.
 
     Examples
     --------

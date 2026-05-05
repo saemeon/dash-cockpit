@@ -148,11 +148,8 @@ def register_refresh_callbacks(
             entry = registry.get(card_id)
         except KeyError:
             return html.Div(f"Unknown card: {card_id!r}")
-        from dash_cockpit._layout import _CardShim
-
-        card_obj = _CardShim(entry["render"], entry["meta"])
         ctx = context_provider() if context_provider is not None else {}
-        body, _settings, _actions = error_boundary(card_obj, ctx)
+        body, _settings, _actions = error_boundary(entry["card"], ctx)
         # Refresh re-renders the body only — settings stays in the drawer
         # until reopened; action overrides are static for this tick.
         return body
@@ -165,16 +162,11 @@ def register_refresh_callbacks(
     def _refresh_card_tick(_n_intervals):
         from dash import callback_context
 
-        ctx = callback_context
-        if not ctx.triggered:
-            return html.Div("(no trigger)")
-        import json as _json
+        from dash_cockpit._chrome import _triggered_card_id
 
-        try:
-            trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
-            card_id = _json.loads(trigger_id).get("card_id")
-        except (ValueError, KeyError, IndexError):
-            return html.Div("(invalid trigger)")
+        card_id = _triggered_card_id(callback_context)
+        if card_id is None:
+            return html.Div("(no trigger)")
         return _render_body_for(card_id)
 
     # Refresh … action click — pattern-matching on the standard "_refresh"
@@ -199,14 +191,9 @@ def register_refresh_callbacks(
             return no_update
         from dash import callback_context
 
-        ctx = callback_context
-        if not ctx.triggered:
-            return html.Div("(no trigger)")
-        import json as _json
+        from dash_cockpit._chrome import _triggered_card_id
 
-        try:
-            trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
-            card_id = _json.loads(trigger_id).get("card_id")
-        except (ValueError, KeyError, IndexError):
-            return html.Div("(invalid trigger)")
+        card_id = _triggered_card_id(callback_context)
+        if card_id is None:
+            return html.Div("(no trigger)")
         return _render_body_for(card_id)

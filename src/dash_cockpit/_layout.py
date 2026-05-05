@@ -51,8 +51,7 @@ def _resolve_card(
             },
         )
     meta = entry["meta"]
-    card_obj = _CardShim(entry["render"], meta)
-    body, settings, actions_override = error_boundary(card_obj, context)
+    body, settings, actions_override = error_boundary(entry["card"], context)
     refresh_interval = meta.get("refresh_interval", 0)
     body = wrap_for_refresh(body, card_id, refresh_interval)
     # Render-time actions override CARD_META["actions"] when the card returns
@@ -63,25 +62,9 @@ def _resolve_card(
     return card_chrome(
         body,
         card_id=card_id,
-        title=meta.get("title", ""),
         actions=actions_override if actions_override is not None else meta.get("actions"),
         has_settings=settings is not None,
     )
-
-
-class _CardShim:
-    """Minimal :class:`Card`-like wrapper around a registry entry.
-
-    Lets :func:`error_boundary` accept a registry entry without forcing the
-    registry to retain the original :class:`Card` object on the render path.
-    """
-
-    def __init__(self, render_fn, meta):
-        self.CARD_META = meta
-        self._render_fn = render_fn
-
-    def render(self, context: RenderContext) -> Component:
-        return self._render_fn(context)
 
 
 def render_page(

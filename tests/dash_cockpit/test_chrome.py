@@ -90,7 +90,7 @@ def _menu_item_action_ids(chrome_component) -> list[str]:
 
 
 def test_chrome_always_injects_refresh_and_about():
-    chrome = card_chrome(html.Div("body"), card_id="x", title="X")
+    chrome = card_chrome(html.Div("body"), card_id="x")
     ids = _menu_item_action_ids(chrome)
     assert STD_REFRESH in ids
     assert STD_ABOUT in ids
@@ -100,7 +100,7 @@ def test_chrome_always_injects_refresh_and_about():
 
 def test_chrome_injects_settings_when_has_settings_true():
     chrome = card_chrome(
-        html.Div("body"), card_id="x", title="X", has_settings=True
+        html.Div("body"), card_id="x", has_settings=True
     )
     ids = _menu_item_action_ids(chrome)
     assert STD_SETTINGS in ids
@@ -110,7 +110,6 @@ def test_chrome_custom_actions_appear_before_standard():
     chrome = card_chrome(
         html.Div("body"),
         card_id="x",
-        title="X",
         actions={"export": "Export CSV"},
     )
     ids = _menu_item_action_ids(chrome)
@@ -130,7 +129,6 @@ def test_chrome_extra_menu_items_appear_last():
     chrome = card_chrome(
         html.Div("body"),
         card_id="x",
-        title="X",
         extra_menu_items=[extra],
     )
     ids = _menu_item_action_ids(chrome)

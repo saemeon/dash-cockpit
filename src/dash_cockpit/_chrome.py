@@ -27,8 +27,6 @@ from typing import TYPE_CHECKING, Any
 import dash_mantine_components as dmc
 from dash import html
 
-from dash_cockpit._packing import CARD_MENU_CLASS
-
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
@@ -117,6 +115,41 @@ def _normalise_actions(
     }
 
 
+def _triggered_card_id(ctx) -> str | None:
+    """Extract ``card_id`` from a pattern-matching trigger, or return ``None``.
+
+    Every per-card pattern-matching id in the cockpit (action menu items,
+    refresh interval ticks, refresh button clicks) carries a ``card_id``
+    field. This helper centralises the boilerplate for pulling it out of
+    ``callback_context.triggered`` so the call sites can focus on what to
+    do with it.
+
+    Parameters
+    ----------
+    ctx : dash.callback_context
+        The callback context inside a Dash callback.
+
+    Returns
+    -------
+    str or None
+        The triggering element's ``card_id``, or ``None`` if there's no
+        trigger or the trigger isn't a pattern-matching dict id.
+    """
+    if not ctx.triggered:
+        return None
+    import json as _json
+
+    trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
+    try:
+        parsed = _json.loads(trigger_id)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    cid = parsed.get("card_id")
+    return cid if isinstance(cid, str) else None
+
+
 STD_REFRESH = "_refresh"
 STD_ABOUT = "_about"
 STD_SETTINGS = "_settings"
@@ -180,16 +213,8 @@ def register_about_callback(app, registry) -> None:
         # No clicks anywhere yet (initial fan-out fires once with all-zeros).
         if not any(n_clicks_list or []):
             return no_update, no_update, no_update
-        if not callback_context.triggered:
-            return no_update, no_update, no_update
-        import json as _json
-
-        try:
-            trigger_id = (
-                callback_context.triggered[0]["prop_id"].rsplit(".", 1)[0]
-            )
-            card_id = _json.loads(trigger_id).get("card_id")
-        except (ValueError, KeyError, IndexError):
+        card_id = _triggered_card_id(callback_context)
+        if card_id is None:
             return no_update, no_update, no_update
         try:
             entry = registry.get(card_id)
@@ -198,30 +223,25 @@ def register_about_callback(app, registry) -> None:
                 f"No card registered for id {card_id!r}."
             )
         meta = entry["meta"]
-        body_children = [
-            html.P(meta.get("description", ""), className="mb-2"),
-            html.Div(
-                [
-                    html.Strong("Team: "),
-                    html.Span(meta.get("team", "")),
-                ],
-                className="text-muted small",
+        body_children: list[Component] = [
+            dmc.Text(meta.get("description", ""), mb="xs"),
+            dmc.Text(
+                [html.Strong("Team: "), meta.get("team", "")],
+                c="dimmed",
+                size="sm",
             ),
         ]
         deep_link = meta.get("deep_link")
         if deep_link:
             body_children.append(
-                html.Div(
-                    html.A(
-                        "Open in team app",
-                        href=deep_link,
-                        target="_blank",
-                        rel="noopener",
-                    ),
-                    className="mt-2",
+                dmc.Anchor(
+                    "Open in team app",
+                    href=deep_link,
+                    target="_blank",
+                    mt="xs",
                 )
             )
-        return True, meta.get("title", card_id), html.Div(body_children)
+        return True, meta.get("title", card_id), dmc.Stack(body_children, gap="xs")
 
 
 def build_settings_drawer() -> Component:
@@ -277,43 +297,29 @@ def register_settings_drawer_callback(app, registry, context_provider=None) -> N
     def _on_settings(n_clicks_list):
         if not any(n_clicks_list or []):
             return no_update, no_update, no_update
-        if not callback_context.triggered:
+        card_id = _triggered_card_id(callback_context)
+        if card_id is None:
             return no_update, no_update, no_update
-        import json as _json
-
-        try:
-            trigger_id = (
-                callback_context.triggered[0]["prop_id"].rsplit(".", 1)[0]
-            )
-            card_id = _json.loads(trigger_id).get("card_id")
-        except (ValueError, KeyError, IndexError):
-            return no_update, no_update, no_update
-
         try:
             entry = registry.get(card_id)
         except KeyError:
-            return True, "Settings", html.Div(
-                f"No card registered for id {card_id!r}.",
-                className="text-danger",
+            return True, "Settings", dmc.Text(
+                f"No card registered for id {card_id!r}.", c="red"
             )
 
-        from dash_cockpit._layout import _CardShim
-
-        card_obj = _CardShim(entry["render"], entry["meta"])
+        card_obj = entry["card"]
         ctx = context_provider() if context_provider is not None else {}
         try:
             result = card_obj.render(ctx)
         except Exception as e:  # noqa: BLE001 - surface in drawer, don't crash app
-            return True, "Settings — error", html.Div(
-                f"Error rendering settings: {e}",
-                className="text-danger",
+            return True, "Settings — error", dmc.Text(
+                f"Error rendering settings: {e}", c="red"
             )
         _body, settings, _actions = unwrap_render_result(result)
         if settings is None:
             # Card opted out of settings between page render and click — gracefully no-op.
-            return True, "Settings", html.Div(
-                "This card has no settings.",
-                className="text-muted",
+            return True, "Settings", dmc.Text(
+                "This card has no settings.", c="dimmed"
             )
         title = f"{entry['meta'].get('title', card_id)} — Settings"
         return True, title, settings
@@ -323,7 +329,6 @@ def card_chrome(
     body: Component,
     *,
     card_id: str,
-    title: str = "",
     actions: list[dict[str, Any]] | dict[str, Any] | None = None,
     extra_menu_items: list[Component] | None = None,
     has_settings: bool = False,
@@ -332,7 +337,9 @@ def card_chrome(
 
     The chrome supplies the border, rounded corners, body padding, and a
     floating `…` action menu in the top-right corner. There is no header
-    bar — cards render their own title (if they want one) inside the body.
+    bar — cards render their own title (if they want one) inside the body;
+    ``CARD_META["title"]`` is consumed by the About modal and the registry,
+    not by the chrome.
 
     Parameters
     ----------
@@ -342,10 +349,6 @@ def card_chrome(
         whole cell.
     card_id : str
         ``CARD_META["id"]``. Used for action callback ids.
-    title : str, optional
-        Accepted for API compatibility and used by the About modal lookup
-        elsewhere — **not rendered by the chrome**. Cards that want a
-        visible title draw it inside their body.
     actions : list, dict, or None, optional
         Either the legacy ``CARD_META["actions"]`` list (``[{"id", "label"}, ...]``)
         or the render-time slot dict (``{action_id: str | {"label", ...extras}}``).
@@ -428,8 +431,10 @@ def card_chrome(
                                 color="gray",
                                 size="sm",
                                 radius="xl",
-                                # Ensure clicks here don't trigger drag-start.
-                                className=CARD_MENU_CLASS,
+                                # The menu button is a <button>, so the
+                                # grid's draggableCancel selector (which
+                                # lists "button") already prevents drag-start
+                                # here — no extra className needed.
                                 **{"aria-label": "Card menu"},
                             ),
                         ),

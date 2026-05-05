@@ -512,10 +512,10 @@ def render_preset_section(presets: list[Preset], save_target: str = "") -> objec
 
     return html.Div(
         [
-            html.H6("Presets", className="mb-2"),
+            dmc.Text("Presets", size="sm", fw=500, mb="xs"),
             picker,
             buttons,
-            html.Div(id=PRESET_STATUS_ID, className="text-muted small mb-3"),
+            dmc.Text(id=PRESET_STATUS_ID, c="dimmed", size="sm", mb="md"),
             modal,
         ]
     )

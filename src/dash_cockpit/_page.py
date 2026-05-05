@@ -31,8 +31,6 @@ class TeamPage:
     columns : int
         Grid width in widget units. Each card defaults to ``(1, 1)``;
         cards declaring ``size=(2, 1)`` span two columns. By default ``12``.
-    grid_columns : int
-        Reserved for future use. By default ``0`` (use ``columns``).
 
     Examples
     --------
@@ -49,7 +47,6 @@ class TeamPage:
     id: str = ""
     team: str = ""
     columns: int = 12
-    grid_columns: int = 0
 
 
 @dataclass
