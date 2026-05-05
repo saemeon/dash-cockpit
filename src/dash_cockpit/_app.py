@@ -43,6 +43,10 @@ from dash_cockpit._registry import CardRegistry
 # handles routing, so we don't need anything custom.
 
 
+APPSHELL_ID = "_cockpit_appshell"
+NAVBAR_BURGER_ID = "_cockpit_navbar_burger"
+
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -328,16 +332,33 @@ class CockpitApp:
             [
                 dmc.AppShellHeader(
                     dmc.Group(
-                        [dmc.Title(self._title, order=4)],
+                        [
+                            dmc.Burger(
+                                id=NAVBAR_BURGER_ID,
+                                opened=True,
+                                size="sm",
+                                **{"aria-label": "Toggle sidebar"},
+                            ),
+                            dmc.Title(self._title, order=4),
+                        ],
                         h="100%",
                         px="md",
+                        align="center",
+                        gap="md",
                     ),
                 ),
                 dmc.AppShellNavbar(self._build_navbar_children()),
                 dmc.AppShellMain(content),
             ],
+            id=APPSHELL_ID,
             header={"height": 56},
-            navbar={"width": 220, "breakpoint": 0},
+            # breakpoint=0 means the navbar is always shown unless explicitly
+            # collapsed via the burger toggle. desktop=False initially (visible).
+            navbar={
+                "width": 220,
+                "breakpoint": 0,
+                "collapsed": {"desktop": False},
+            },
             padding=0,
         )
 
@@ -408,6 +429,25 @@ class CockpitApp:
         return ctx
 
     def _register_callbacks(self) -> None:
+        # Burger toggle ↔ navbar collapsed state. Pure clientside —
+        # ``dmc.AppShell.navbar`` is a nested dict, so we re-emit the whole
+        # thing on each click. ``Burger.opened`` flips on its own click;
+        # we read it and translate to the AppShell's expected shape.
+        self._app.clientside_callback(
+            """
+            function(opened) {
+                return {
+                    width: 220,
+                    breakpoint: 0,
+                    collapsed: {desktop: !opened}
+                };
+            }
+            """,
+            Output(APPSHELL_ID, "navbar"),
+            Input(NAVBAR_BURGER_ID, "opened"),
+            prevent_initial_call=True,
+        )
+
         # Active-state for the sidebar — toggle ``dmc.NavLink.active`` on
         # the link whose slug matches the current pathname. Falls back to
         # the first slug for ``/`` and unknown paths, matching
