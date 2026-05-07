@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any
 import dash_mantine_components as dmc
 from dash import html
 
+from dash_cockpit._actions import STD_ABOUT, STD_REFRESH, STD_SETTINGS, _triggered_card_id
+
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
@@ -114,51 +116,6 @@ def _normalise_actions(
         for aid, v in actions.items()
     }
 
-
-def _triggered_card_id(ctx) -> str | None:
-    """Extract ``card_id`` from a pattern-matching trigger, or return ``None``.
-
-    Every per-card pattern-matching id in the cockpit (action menu items,
-    refresh interval ticks, refresh button clicks) carries a ``card_id``
-    field. This helper centralises the boilerplate for pulling it out of
-    ``callback_context.triggered`` so the call sites can focus on what to
-    do with it.
-
-    Parameters
-    ----------
-    ctx : dash.callback_context
-        The callback context inside a Dash callback.
-
-    Returns
-    -------
-    str or None
-        The triggering element's ``card_id``, or ``None`` if there's no
-        trigger or the trigger isn't a pattern-matching dict id.
-    """
-    if not ctx.triggered:
-        return None
-    import json as _json
-
-    trigger_id = ctx.triggered[0]["prop_id"].rsplit(".", 1)[0]
-    try:
-        parsed = _json.loads(trigger_id)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    cid = parsed.get("card_id")
-    return cid if isinstance(cid, str) else None
-
-
-STD_REFRESH = "_refresh"
-STD_ABOUT = "_about"
-STD_SETTINGS = "_settings"
-"""Reserved IDs for cockpit-supplied standard actions.
-
-Underscore-prefixed so collisions with team-defined IDs are obvious. Don't
-use these for custom actions in ``CARD_META["actions"]`` or render-time
-slot dicts — the cockpit auto-injects them and registers their callbacks.
-"""
 
 ABOUT_MODAL_ID = "_cockpit_about_modal"
 ABOUT_MODAL_BODY_ID = "_cockpit_about_modal_body"
@@ -264,65 +221,59 @@ def build_settings_drawer() -> Component:
     )
 
 
-def register_settings_drawer_callback(app, registry, context_provider=None) -> None:
-    """Open the side drawer with a card's settings slot when its Settings … fires.
+def resolve_settings_for(
+    card_id: str, registry, context: dict | None = None
+) -> tuple[str, "Component"]:
+    """Re-render a card and produce ``(title, settings_panel)`` for display.
 
-    Re-calls ``card.render(context)`` on each open and extracts the
-    ``settings`` slot via :func:`unwrap_render_result`. Re-rendering avoids
-    duplicate-ID issues that would arise from rendering settings twice
-    (once at card mount, once in the drawer) and keeps the slot's state
-    fresh from the latest render context.
+    Drawer-agnostic and aside-agnostic — this helper is *only* about turning
+    a ``card_id`` into a rendered settings panel. The caller (``_app.py``'s
+    settings-click router) decides which container the panel goes into,
+    based on the user's settings-style preference.
 
-    Errors during settings re-render fall back to a small inline message
-    in the drawer; the cockpit shell stays alive.
+    Re-renders the card on every call rather than reading from cache because
+    settings DOM lives in one place at a time (no duplicate IDs across
+    body+settings copies) and the render context can change.
+
+    Parameters
+    ----------
+    card_id : str
+        The ``CARD_META["id"]`` of the card whose Settings … was clicked.
+    registry : CardRegistry
+        Used to look up the card.
+    context : dict, optional
+        Render context forwarded to ``card.render``. ``None`` is treated
+        as ``{}``.
+
+    Returns
+    -------
+    title : str
+        Suitable for either Drawer.title or AppShellAside title.
+    body : Component
+        The settings panel itself, or a small inline error/empty message.
     """
-    from dash import ALL, Input, Output, callback_context, no_update
-
     from dash_cockpit._card import unwrap_render_result
 
-    @app.callback(
-        Output(SETTINGS_DRAWER_ID, "opened"),
-        Output(SETTINGS_DRAWER_ID, "title"),
-        Output(SETTINGS_DRAWER_BODY_ID, "children"),
-        Input(
-            {
-                "type": "_cockpit_card_action",
-                "card_id": ALL,
-                "action": STD_SETTINGS,
-            },
-            "n_clicks",
-        ),
-        prevent_initial_call=True,
-    )
-    def _on_settings(n_clicks_list):
-        if not any(n_clicks_list or []):
-            return no_update, no_update, no_update
-        card_id = _triggered_card_id(callback_context)
-        if card_id is None:
-            return no_update, no_update, no_update
-        try:
-            entry = registry.get(card_id)
-        except KeyError:
-            return True, "Settings", dmc.Text(
-                f"No card registered for id {card_id!r}.", c="red"
-            )
+    try:
+        entry = registry.get(card_id)
+    except KeyError:
+        return "Settings", dmc.Text(
+            f"No card registered for id {card_id!r}.", c="red"
+        )
 
-        card_obj = entry["card"]
-        ctx = context_provider() if context_provider is not None else {}
-        try:
-            result = card_obj.render(ctx)
-        except Exception as e:  # noqa: BLE001 - surface in drawer, don't crash app
-            return True, "Settings — error", dmc.Text(
-                f"Error rendering settings: {e}", c="red"
-            )
-        _body, settings, _actions = unwrap_render_result(result)
-        if settings is None:
-            # Card opted out of settings between page render and click — gracefully no-op.
-            return True, "Settings", dmc.Text(
-                "This card has no settings.", c="dimmed"
-            )
-        title = f"{entry['meta'].get('title', card_id)} — Settings"
-        return True, title, settings
+    card_obj = entry["card"]
+    try:
+        result = card_obj.render(context or {})
+    except Exception as e:  # noqa: BLE001 - surface in panel, don't crash app
+        return "Settings — error", dmc.Text(
+            f"Error rendering settings: {e}", c="red"
+        )
+    _body, settings, _actions = unwrap_render_result(result)
+    if settings is None:
+        # Card opted out of settings between page render and click — gracefully no-op.
+        return "Settings", dmc.Text("This card has no settings.", c="dimmed")
+    title = f"{entry['meta'].get('title', card_id)} — Settings"
+    return title, settings
 
 
 def card_chrome(

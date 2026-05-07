@@ -422,6 +422,33 @@ Storage layout: `<directory>/<sanitised-group>/<sanitised-name>.json`. Group nam
 
 The protocol itself stays neutral — group filtering is an implementation concern of the store, not the cockpit. The same pattern works for any backend (database, cloud, etc.).
 
+## Global settings
+
+A gear icon (⚙) in the top-right of the header opens the **global settings modal**. Three user preferences live there, all persisted to `localStorage` so they survive reloads:
+
+| Preference | Store ID | Values | Default |
+|---|---|---|---|
+| **Theme** | `_cockpit_theme_pref` | `"light"` / `"dark"` / `"auto"` | `"light"` |
+| **Card settings panel** | `_cockpit_settings_style_pref` | `"modal"` / `"sidebar"` | `"modal"` |
+| **Edit layout** | `_cockpit_edit_mode_pref` | `true` / `false` | `false` |
+
+### Theme
+
+The theme toggle drives `dmc.MantineProvider(forceColorScheme=...)`. `"auto"` follows the OS preference via Mantine's built-in media-query hook. The preference is applied on every page load — no flash for returning users.
+
+### Card settings panel style
+
+When a card exposes a `settings` slot (see [Three card surfaces](#three-card-surfaces-body-settings-actions)), clicking **Settings** in its `…` menu opens the settings UI. The **Card settings panel** preference controls *where*:
+
+- **`"modal"` (default)** — opens a `dmc.Drawer` sliding in from the right edge. Works on any screen width.
+- **`"sidebar"`** — populates the `AppShell.aside` panel on the right. Stays open as the user browses; useful for dashboards with many cards to compare.
+
+The settings router callback is server-side, so both containers are always in the DOM — switching the preference takes effect on the next Settings click.
+
+### Edit layout
+
+The **Edit layout** toggle (previously in the navbar) is now inside the global settings modal. In edit mode, drag handles and resize grips appear and the `…` menus become visible. Flipping it back to off hides all controls and locks card positions.
+
 ## Export pipeline
 
 Cards opt into export facets via runtime-checkable protocols:

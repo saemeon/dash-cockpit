@@ -125,13 +125,22 @@ Pages are N-column widget grids with **square unit cells** (macOS-widget style):
   - `CockpitApp(theme=...)` is now `Optional[str] = None`. Pass a Bootstrap-theme URL only if your card bodies still depend on Bootstrap utility classNames (the demo cards use a few — `text-muted`, `mb-2` — and lose styling without one).
   - Edit-mode toggle now reads `Switch.checked` instead of `Switch.value` (dmc convention); the existing edit-mode callback in `_packing.py` was updated to match.
   - Whole tree wrapped in `dmc.MantineProvider` for Mantine's theming context.
+  - Free wins shipped in the same phase: collapsible sidebar (`AppShell.navbar` prop), dark-mode / auto theme via `MantineProvider(forceColorScheme=...)`, global settings modal (gear icon), Drawer-vs-Aside routing for the card settings panel, and `localStorage`-persisted preferences for theme / settings-style / edit-mode (see Phase 4.11 below).
+- **Phase 4.11 — Global settings modal (M5.5 free wins):** ✅ shipped.
+  - Gear icon (⚙) in the AppShell header opens a `dmc.Modal` with three user-preference sections: Appearance (theme), Edit layout (edit-mode toggle, moved out of the navbar), and Card settings panel (Drawer-vs-Aside choice).
+  - Three `dcc.Store(storage_type="local")` instances persist preferences across reloads: `THEME_STORE_ID` (`"light"/"dark"/"auto"`), `SETTINGS_STYLE_STORE_ID` (`"modal"/"sidebar"`), `EDIT_MODE_STORE_ID` (`bool`).
+  - Theme store drives a clientside callback that calls `dash_clientside.set_props` on `dmc.MantineProvider` — no round-trip; theme switch is immediate.
+  - `SETTINGS_STYLE_STORE_ID` is read by the server-side settings-router callback: value `"modal"` opens the `dmc.Drawer` (right edge); value `"sidebar"` populates the `AppShell.aside` slot. Both containers are always in the DOM; only one is populated per click.
+  - `SETTINGS_ASIDE_ID` / `SETTINGS_ASIDE_BODY_ID` / `SETTINGS_ASIDE_TITLE_ID` / `SETTINGS_ASIDE_CLOSE_ID` — four new component IDs in `_app.py` for the aside slot.
+  - `resolve_settings_for(card_id, registry, context)` extracted in `_chrome.py`: safely renders the card's settings slot and returns `(title, body)`. Handles unknown card (soft error), card with no settings slot ("no settings" message), and card whose `render` raises (error message). Tested in isolation.
+  - Tests: 11 new tests in `test_app.py` cover gear button presence, modal sections, store IDs in layout, `storage_type="local"` assertion (tree walk), aside slot presence, edit-mode toggle location, `resolve_settings_for` — known card / unknown card / no-settings slot / render-raises, and settings-router callback registration.
 - **Phase 4.10 — Per-package import isolation (ROADMAP pin-down #7):** ✅ shipped.
   - `CardRegistry.load_packages([...])` now wraps each `load_package` call in try/except; failures are recorded in `registry._failures` and surfaced via `registry.failures()` (snapshot, not live).
   - `warnings.warn` fires at startup with a `RuntimeWarning` for each failed package, naming the package + the original exception text — visible in console without programmatic access.
   - Cards from a failed package are simply absent; pages referencing them fall through to the existing "Unknown card" warning tile (one-level-up of the per-card error-boundary pattern, no new failure surface).
   - `load_packages(strict=True)` re-raises on the first failure (matches pre-#7 behaviour); useful in tests and CI.
   - `load_package` (single-package) still raises directly — the multi-package method owns the isolation policy.
-- **Phase 5 (next, optional):** drag-from-palette flow, layout snapshotting in presets, preset delete UI.
+- **Phase 5 (next, optional):** drag-from-palette flow, layout snapshotting in presets, preset delete UI, `CockpitConfig` dataclass (pin-down #8).
 
 ## Known limitations / honest caveats
 

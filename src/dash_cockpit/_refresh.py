@@ -140,7 +140,7 @@ def register_refresh_callbacks(
     """
     from dash import MATCH, Input, Output
 
-    from dash_cockpit._chrome import STD_REFRESH
+    from dash_cockpit._actions import STD_REFRESH
 
     def _render_body_for(card_id: str) -> Component:
         """Re-render one card body via the registry, share logic between triggers."""
@@ -162,7 +162,7 @@ def register_refresh_callbacks(
     def _refresh_card_tick(_n_intervals):
         from dash import callback_context
 
-        from dash_cockpit._chrome import _triggered_card_id
+        from dash_cockpit._actions import _triggered_card_id
 
         card_id = _triggered_card_id(callback_context)
         if card_id is None:
@@ -191,7 +191,7 @@ def register_refresh_callbacks(
             return no_update
         from dash import callback_context
 
-        from dash_cockpit._chrome import _triggered_card_id
+        from dash_cockpit._actions import _triggered_card_id
 
         card_id = _triggered_card_id(callback_context)
         if card_id is None:

@@ -12,11 +12,14 @@ from dash import ALL, Input, Output, State, dcc, html, no_update
 if TYPE_CHECKING:
     from dash.development.base_component import Component
 
+from dash_cockpit._actions import STD_SETTINGS
 from dash_cockpit._chrome import (
+    SETTINGS_DRAWER_BODY_ID,
+    SETTINGS_DRAWER_ID,
     build_about_modal,
     build_settings_drawer,
     register_about_callback,
-    register_settings_drawer_callback,
+    resolve_settings_for,
 )
 from dash_cockpit._configurator import (
     WORKING_LIST_STORE_ID,
@@ -45,6 +48,25 @@ from dash_cockpit._registry import CardRegistry
 
 APPSHELL_ID = "_cockpit_appshell"
 NAVBAR_BURGER_ID = "_cockpit_navbar_burger"
+
+# Global settings — a single gear button in the header opens a modal
+# whose contents are app-wide preferences (theme, edit mode, where
+# per-card settings open). All three preferences persist to localStorage
+# so they survive reloads.
+GEAR_BUTTON_ID = "_cockpit_settings_gear"
+GLOBAL_SETTINGS_MODAL_ID = "_cockpit_global_settings_modal"
+THEME_STORE_ID = "_cockpit_theme_pref"  # values: "light" | "dark" | "auto"
+SETTINGS_STYLE_STORE_ID = "_cockpit_settings_style_pref"  # "modal" | "sidebar"
+
+# Persistent right-hand aside that hosts per-card settings when the user's
+# settings-style pref is "sidebar". When pref is "modal" (the default),
+# the aside stays collapsed and the existing dmc.Drawer is used instead.
+SETTINGS_ASIDE_ID = "_cockpit_settings_aside"
+SETTINGS_ASIDE_BODY_ID = "_cockpit_settings_aside_body"
+SETTINGS_ASIDE_TITLE_ID = "_cockpit_settings_aside_title"
+SETTINGS_ASIDE_CLOSE_ID = "_cockpit_settings_aside_close"
+
+MANTINE_PROVIDER_ID = "_cockpit_mantine_provider"
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -230,9 +252,7 @@ class CockpitApp:
             self._app, self._registry, self._build_render_context
         )
         register_about_callback(self._app, self._registry)
-        register_settings_drawer_callback(
-            self._app, self._registry, self._build_render_context
-        )
+        self._register_settings_router()
         if any(isinstance(p, ConfiguratorPage) for p in self._pages):
             register_configurator_callbacks(
                 self._app,
@@ -242,22 +262,18 @@ class CockpitApp:
             )
 
     def _build_navbar_children(self) -> list[Any]:
-        """Contents of the AppShell's navbar (sidebar) — nav links + extras."""
+        """Contents of the AppShell's navbar (sidebar) — nav links + extras.
+
+        The Edit-layout switch lives in the global settings modal (header
+        gear), not here — keeps the navbar focused on navigation.
+        """
         nav_items = [
             _nav_link(p, s)
             for p, s in zip(self._pages, self._slugs, strict=True)
         ]
         items: list[Any] = list(nav_items)
-        items.append(dmc.Divider(my="sm"))
-        # Edit-mode toggle: when off, cards are locked.
-        items.append(
-            dmc.Switch(
-                id=EDIT_MODE_TOGGLE_ID,
-                label="Edit layout",
-                checked=False,
-            )
-        )
         if self._export_backends:
+            items.append(dmc.Divider(my="sm"))
             items.append(
                 dmc.Button(
                     "Download report",
@@ -265,10 +281,88 @@ class CockpitApp:
                     variant="light",
                     size="xs",
                     fullWidth=True,
-                    mt="md",
                 )
             )
         return [dmc.Stack(items, gap="xs", p="md")]
+
+    def _build_global_settings_modal(self) -> Component:
+        """Build the gear-icon-driven global settings modal.
+
+        Three preferences, each persisted to ``localStorage`` via its own
+        ``dcc.Store``:
+
+        - **Appearance** — light / dark / auto. Drives
+          ``dmc.MantineProvider.forceColorScheme``.
+        - **Edit layout** — when on, grids are draggable/resizable. Same
+          store the navbar used to write to (:data:`EDIT_MODE_STORE_ID`).
+        - **Card settings panel** — modal (a centered ``dmc.Drawer`` /
+          ``dmc.Modal``-style overlay) or sidebar (a persistent right-edge
+          ``dmc.AppShellAside`` that pushes content to make room). Cards
+          stay blind to this — see the Settings ⋮ click callback in
+          :mod:`_chrome` for the routing.
+        """
+        return dmc.Modal(
+            children=dmc.Stack(
+                [
+                    dmc.Stack(
+                        [
+                            dmc.Text("Appearance", size="sm", fw=500),
+                            dmc.SegmentedControl(
+                                id=THEME_STORE_ID + "_control",
+                                data=[
+                                    {"label": "Light", "value": "light"},
+                                    {"label": "Dark", "value": "dark"},
+                                    {"label": "Auto", "value": "auto"},
+                                ],
+                                value="light",
+                                fullWidth=True,
+                            ),
+                        ],
+                        gap=4,
+                    ),
+                    dmc.Switch(
+                        id=EDIT_MODE_TOGGLE_ID,
+                        label="Edit layout",
+                        description=(
+                            "Allow drag/resize of cards on team and "
+                            "configurator pages."
+                        ),
+                        checked=False,
+                    ),
+                    dmc.Stack(
+                        [
+                            dmc.Text(
+                                "Card settings panel", size="sm", fw=500
+                            ),
+                            dmc.SegmentedControl(
+                                id=SETTINGS_STYLE_STORE_ID + "_control",
+                                data=[
+                                    {"label": "Modal drawer", "value": "modal"},
+                                    {"label": "Persistent sidebar", "value": "sidebar"},
+                                ],
+                                value="modal",
+                                fullWidth=True,
+                            ),
+                            dmc.Text(
+                                "How a card's Settings ⋮ opens — as a "
+                                "right-edge drawer (modal, dimmed backdrop) "
+                                "or as a persistent right sidebar that "
+                                "pushes the page to make room.",
+                                c="dimmed",
+                                size="xs",
+                            ),
+                        ],
+                        gap=4,
+                    ),
+                ],
+                gap="lg",
+            ),
+            id=GLOBAL_SETTINGS_MODAL_ID,
+            title="Cockpit settings",
+            opened=False,
+            centered=True,
+            size="md",
+        )
 
     def _build_export_modal(self) -> Component:
         labels = list(self._export_backends)
@@ -333,31 +427,89 @@ class CockpitApp:
                 dmc.AppShellHeader(
                     dmc.Group(
                         [
-                            dmc.Burger(
-                                id=NAVBAR_BURGER_ID,
-                                opened=True,
-                                size="sm",
-                                **{"aria-label": "Toggle sidebar"},
+                            # Left: burger + title.
+                            dmc.Group(
+                                [
+                                    dmc.Burger(
+                                        id=NAVBAR_BURGER_ID,
+                                        opened=True,
+                                        size="sm",
+                                        **{"aria-label": "Toggle sidebar"},
+                                    ),
+                                    dmc.Title(self._title, order=4),
+                                ],
+                                gap="md",
+                                align="center",
                             ),
-                            dmc.Title(self._title, order=4),
+                            # Right: gear opens the global settings modal.
+                            dmc.ActionIcon(
+                                "⚙",
+                                id=GEAR_BUTTON_ID,
+                                variant="subtle",
+                                color="gray",
+                                size="lg",
+                                **{"aria-label": "Cockpit settings"},
+                            ),
                         ],
                         h="100%",
                         px="md",
                         align="center",
-                        gap="md",
+                        justify="space-between",
                     ),
                 ),
                 dmc.AppShellNavbar(self._build_navbar_children()),
+                dmc.AppShellAside(
+                    [
+                        # Aside header: title on the left, X-close on the right.
+                        # Mirrors the chrome of dmc.Drawer so users see a
+                        # consistent header regardless of which surface their
+                        # pref selected.
+                        dmc.Group(
+                            [
+                                dmc.Text(
+                                    "Settings",
+                                    id=SETTINGS_ASIDE_TITLE_ID,
+                                    fw=600,
+                                ),
+                                dmc.ActionIcon(
+                                    "✕",
+                                    id=SETTINGS_ASIDE_CLOSE_ID,
+                                    variant="subtle",
+                                    color="gray",
+                                    size="sm",
+                                    **{"aria-label": "Close settings"},
+                                ),
+                            ],
+                            justify="space-between",
+                            align="center",
+                            p="md",
+                            style={
+                                "borderBottom": "1px solid var(--mantine-color-default-border)",
+                            },
+                        ),
+                        html.Div(
+                            id=SETTINGS_ASIDE_BODY_ID,
+                            style={"padding": "16px", "overflowY": "auto"},
+                        ),
+                    ],
+                    id=SETTINGS_ASIDE_ID,
+                ),
                 dmc.AppShellMain(content),
             ],
             id=APPSHELL_ID,
             header={"height": 56},
-            # breakpoint=0 means the navbar is always shown unless explicitly
-            # collapsed via the burger toggle. desktop=False initially (visible).
             navbar={
                 "width": 220,
                 "breakpoint": 0,
                 "collapsed": {"desktop": False},
+            },
+            # The aside is collapsed by default; only the Settings ⋮ click
+            # callback opens it (and only when the user's settings-style
+            # pref is "sidebar"). Width matches the Drawer's "md" size.
+            aside={
+                "width": 360,
+                "breakpoint": 0,
+                "collapsed": {"desktop": True},
             },
             padding=0,
         )
@@ -369,16 +521,23 @@ class CockpitApp:
             # interaction with the dmc.AppShell layout produces a "navigates
             # briefly then snaps back" symptom.
             dcc.Location(id="_cockpit_url", refresh=False),
-            # Persisted edit-mode state — survives reloads.
+            # User preferences — all persisted to localStorage so they
+            # survive reloads. The matching SegmentedControl/Switch in the
+            # global settings modal writes to each store via clientside.
             dcc.Store(
-                id=EDIT_MODE_STORE_ID,
-                storage_type="local",
-                data=False,
+                id=EDIT_MODE_STORE_ID, storage_type="local", data=False
+            ),
+            dcc.Store(
+                id=THEME_STORE_ID, storage_type="local", data="light"
+            ),
+            dcc.Store(
+                id=SETTINGS_STYLE_STORE_ID, storage_type="local", data="modal"
             ),
             # Resize tick — bumped clientside on window.resize so square-cell
             # callback re-measures grid widths.
             dcc.Store(id=GRID_RESIZE_TICK_ID, data=0),
             appshell,
+            self._build_global_settings_modal(),
             # Standard-action surfaces: About modal + Settings drawer always
             # rendered (auto-injected … items in card_chrome target them).
             build_about_modal(),
@@ -388,7 +547,75 @@ class CockpitApp:
             siblings.append(self._build_export_modal())
             siblings.append(dcc.Download(id="_cockpit_export_download"))
         # MantineProvider must wrap any dmc components for theming context.
-        return dmc.MantineProvider(html.Div(siblings))
+        # ``forceColorScheme`` is driven by the theme-pref store via clientside;
+        # we keep an id so the callback can target it.
+        return dmc.MantineProvider(
+            html.Div(siblings),
+            id=MANTINE_PROVIDER_ID,
+            forceColorScheme="light",
+        )
+
+    def _register_settings_router(self) -> None:
+        """Route Settings ⋮ clicks to the user's chosen surface (Drawer or Aside).
+
+        The card's settings slot is rendered once via :func:`resolve_settings_for`,
+        then sent to *both* containers' bodies. The user's
+        ``SETTINGS_STYLE_STORE_ID`` pref decides which container opens —
+        the other stays inert (Drawer.opened=False, Aside collapsed). Cards
+        stay completely blind to which surface their settings end up in.
+
+        This callback lives here, not in :mod:`_chrome`, so the dependency
+        arrow stays right: :mod:`_chrome` (UI builder) is imported by
+        :mod:`_app` (orchestrator), never the other way around.
+        """
+        from dash import ALL, Input, Output, State, callback_context, no_update
+
+        from dash_cockpit._actions import _triggered_card_id
+
+        @self._app.callback(
+            Output(SETTINGS_DRAWER_ID, "opened"),
+            Output(SETTINGS_DRAWER_ID, "title"),
+            Output(SETTINGS_DRAWER_BODY_ID, "children"),
+            Output(SETTINGS_ASIDE_TITLE_ID, "children"),
+            Output(SETTINGS_ASIDE_BODY_ID, "children"),
+            Output(APPSHELL_ID, "aside"),
+            Input(
+                {
+                    "type": "_cockpit_card_action",
+                    "card_id": ALL,
+                    "action": STD_SETTINGS,
+                },
+                "n_clicks",
+            ),
+            State(SETTINGS_STYLE_STORE_ID, "data"),
+            prevent_initial_call=True,
+        )
+        def _on_settings_click(n_clicks_list, style):
+            # Initial pattern-match fan-out fires once with all-zeros.
+            if not any(n_clicks_list or []):
+                return (no_update,) * 6
+            card_id = _triggered_card_id(callback_context)
+            if card_id is None:
+                return (no_update,) * 6
+
+            title, body = resolve_settings_for(
+                card_id, self._registry, self._build_render_context()
+            )
+
+            sidebar_aside = {
+                "width": 360, "breakpoint": 0,
+                "collapsed": {"desktop": False},
+            }
+            modal_aside = {
+                "width": 360, "breakpoint": 0,
+                "collapsed": {"desktop": True},
+            }
+
+            if (style or "modal") == "sidebar":
+                # Open the persistent right aside; leave the drawer closed.
+                return False, no_update, no_update, title, body, sidebar_aside
+            # Default / "modal" — open the Drawer; leave the aside collapsed.
+            return True, title, body, no_update, no_update, modal_aside
 
     def _resolve_page(self, pathname: str | None) -> Page | None:
         """Look up a page by URL slug; fall back to the first page on miss."""
@@ -429,6 +656,104 @@ class CockpitApp:
         return ctx
 
     def _register_callbacks(self) -> None:
+        # Gear → open global settings modal.
+        self._app.clientside_callback(
+            """
+            function(n_clicks) {
+                if (!n_clicks) return window.dash_clientside.no_update;
+                return true;
+            }
+            """,
+            Output(GLOBAL_SETTINGS_MODAL_ID, "opened"),
+            Input(GEAR_BUTTON_ID, "n_clicks"),
+            prevent_initial_call=True,
+        )
+
+        # Modal SegmentedControl / Switch → user-pref stores. Each writes
+        # only when the value differs to avoid feedback loops with the
+        # store-on-page-load hydration.
+        self._app.clientside_callback(
+            """
+            function(value, current) {
+                if (value === undefined || value === null) {
+                    return window.dash_clientside.no_update;
+                }
+                return value === current ? window.dash_clientside.no_update : value;
+            }
+            """,
+            Output(THEME_STORE_ID, "data"),
+            Input(THEME_STORE_ID + "_control", "value"),
+            State(THEME_STORE_ID, "data"),
+            prevent_initial_call=True,
+        )
+        self._app.clientside_callback(
+            """
+            function(value, current) {
+                if (value === undefined || value === null) {
+                    return window.dash_clientside.no_update;
+                }
+                return value === current ? window.dash_clientside.no_update : value;
+            }
+            """,
+            Output(SETTINGS_STYLE_STORE_ID, "data"),
+            Input(SETTINGS_STYLE_STORE_ID + "_control", "value"),
+            State(SETTINGS_STYLE_STORE_ID, "data"),
+            prevent_initial_call=True,
+        )
+
+        # Hydrate the modal's controls from each pref store on page load
+        # so persisted values stick. Without this, a user who chose "Dark"
+        # would still see the SegmentedControl read "Light" after a reload.
+        self._app.clientside_callback(
+            """
+            function(stored) {
+                return stored || 'light';
+            }
+            """,
+            Output(THEME_STORE_ID + "_control", "value"),
+            Input(THEME_STORE_ID, "data"),
+        )
+        self._app.clientside_callback(
+            """
+            function(stored) {
+                return stored || 'modal';
+            }
+            """,
+            Output(SETTINGS_STYLE_STORE_ID + "_control", "value"),
+            Input(SETTINGS_STYLE_STORE_ID, "data"),
+        )
+
+        # Theme store → MantineProvider. "auto" maps to None so Mantine
+        # uses the OS preference; light/dark force the corresponding scheme.
+        self._app.clientside_callback(
+            """
+            function(theme) {
+                if (theme === 'auto') return null;
+                return theme || 'light';
+            }
+            """,
+            Output(MANTINE_PROVIDER_ID, "forceColorScheme"),
+            Input(THEME_STORE_ID, "data"),
+        )
+
+        # Aside close button → re-emit the AppShell.aside dict with
+        # collapsed.desktop=True. The Settings ⋮ click callback sets it
+        # back to False when the user opens settings on a card.
+        self._app.clientside_callback(
+            """
+            function(n_clicks) {
+                if (!n_clicks) return window.dash_clientside.no_update;
+                return {
+                    width: 360, breakpoint: 0,
+                    collapsed: {desktop: true}
+                };
+            }
+            """,
+            Output(APPSHELL_ID, "aside", allow_duplicate=True),
+            Input(SETTINGS_ASIDE_CLOSE_ID, "n_clicks"),
+            prevent_initial_call=True,
+        )
+
         # Burger toggle ↔ navbar collapsed state. Pure clientside —
         # ``dmc.AppShell.navbar`` is a nested dict, so we re-emit the whole
         # thing on each click. ``Burger.opened`` flips on its own click;
