@@ -27,7 +27,12 @@ from typing import TYPE_CHECKING, Any
 import dash_mantine_components as dmc
 from dash import html
 
-from dash_cockpit._actions import STD_ABOUT, STD_REFRESH, STD_SETTINGS, _triggered_card_id
+from dash_cockpit._actions import (
+    STD_ABOUT,
+    STD_REFRESH,
+    STD_SETTINGS,
+    _triggered_card_id,
+)
 
 if TYPE_CHECKING:
     from dash.development.base_component import Component
@@ -223,7 +228,7 @@ def build_settings_drawer() -> Component:
 
 def resolve_settings_for(
     card_id: str, registry, context: dict | None = None
-) -> tuple[str, "Component"]:
+) -> tuple[str, Component]:
     """Re-render a card and produce ``(title, settings_panel)`` for display.
 
     Drawer-agnostic and aside-agnostic — this helper is *only* about turning

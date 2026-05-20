@@ -669,58 +669,37 @@ class CockpitApp:
             prevent_initial_call=True,
         )
 
-        # Modal SegmentedControl / Switch → user-pref stores. Each writes
-        # only when the value differs to avoid feedback loops with the
-        # store-on-page-load hydration.
+        # When the modal opens, hydrate both SegmentedControls from the stores.
+        # Triggered by modal.opened (not by the stores), so there is no cycle
+        # with the control→store write-backs below.
         self._app.clientside_callback(
             """
-            function(value, current) {
-                if (value === undefined || value === null) {
-                    return window.dash_clientside.no_update;
-                }
-                return value === current ? window.dash_clientside.no_update : value;
+            function(opened, theme, style) {
+                if (!opened) return [window.dash_clientside.no_update,
+                                     window.dash_clientside.no_update];
+                return [theme || 'light', style || 'modal'];
             }
             """,
-            Output(THEME_STORE_ID, "data"),
-            Input(THEME_STORE_ID + "_control", "value"),
+            Output(THEME_STORE_ID + "_control", "value"),
+            Output(SETTINGS_STYLE_STORE_ID + "_control", "value"),
+            Input(GLOBAL_SETTINGS_MODAL_ID, "opened"),
             State(THEME_STORE_ID, "data"),
-            prevent_initial_call=True,
-        )
-        self._app.clientside_callback(
-            """
-            function(value, current) {
-                if (value === undefined || value === null) {
-                    return window.dash_clientside.no_update;
-                }
-                return value === current ? window.dash_clientside.no_update : value;
-            }
-            """,
-            Output(SETTINGS_STYLE_STORE_ID, "data"),
-            Input(SETTINGS_STYLE_STORE_ID + "_control", "value"),
             State(SETTINGS_STYLE_STORE_ID, "data"),
             prevent_initial_call=True,
         )
 
-        # Hydrate the modal's controls from each pref store on page load
-        # so persisted values stick. Without this, a user who chose "Dark"
-        # would still see the SegmentedControl read "Light" after a reload.
+        # Control → store. Triggered by user interaction only (prevent_initial_call).
         self._app.clientside_callback(
-            """
-            function(stored) {
-                return stored || 'light';
-            }
-            """,
-            Output(THEME_STORE_ID + "_control", "value"),
-            Input(THEME_STORE_ID, "data"),
+            "function(v) { return v || 'light'; }",
+            Output(THEME_STORE_ID, "data"),
+            Input(THEME_STORE_ID + "_control", "value"),
+            prevent_initial_call=True,
         )
         self._app.clientside_callback(
-            """
-            function(stored) {
-                return stored || 'modal';
-            }
-            """,
-            Output(SETTINGS_STYLE_STORE_ID + "_control", "value"),
-            Input(SETTINGS_STYLE_STORE_ID, "data"),
+            "function(v) { return v || 'modal'; }",
+            Output(SETTINGS_STYLE_STORE_ID, "data"),
+            Input(SETTINGS_STYLE_STORE_ID + "_control", "value"),
+            prevent_initial_call=True,
         )
 
         # Theme store → MantineProvider. "auto" maps to None so Mantine
