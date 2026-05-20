@@ -39,7 +39,7 @@ def build_app() -> CockpitApp:
         ),
         TeamPage(
             name="Operations",
-            card_ids=["headcount", "ticket_volume", "broken_card"],
+            card_ids=["headcount", "ticket_volume", "alert_feed", "broken_card"],
             team="ops",
         ),
         UserPage(

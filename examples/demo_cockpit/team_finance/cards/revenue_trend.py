@@ -1,14 +1,14 @@
-"""Revenue trend card — demonstrates the settings slot.
+"""Revenue trend card — demonstrates dmc inside a cockpit card.
 
-Returns a slot dict ``{"body": ..., "settings": ...}``. The settings
-panel holds a "Comparison" dropdown; changing it updates the body's
-headline. State is shared via a per-card ``dcc.Store`` and one
-top-level Dash callback registered at module load time.
+Uses dash-mantine-components throughout: dmc.Table for the data grid,
+dmc.Badge for the delta pill, dmc.Select in the settings slot.
+The settings slot wires a "Comparison" dropdown that updates the headline
+via a standard Dash callback — no cockpit-specific plumbing needed.
 """
 
-from dash import Input, Output, callback, dcc, html
-
+import dash_mantine_components as dmc
 import pandas as pd
+from dash import Input, Output, callback, html
 
 CARD_META = {
     "id": "revenue_trend",
@@ -28,72 +28,72 @@ _DATA = [
     ("Apr", 12.4, 10.1),
 ]
 
-# Per-card component IDs. Stable strings derived from CARD_META["id"] so
-# the body and settings can find each other via callbacks.
 _HEADLINE_ID = f"{CARD_META['id']}--headline"
 _COMPARISON_ID = f"{CARD_META['id']}--comparison"
 
 
-def _headline(comparison: str) -> str:
+def _headline(comparison: str) -> tuple[str, str]:
+    """Return (text, color) for the headline badge."""
     cy_total = sum(c for _, c, _ in _DATA)
     py_total = sum(p for _, _, p in _DATA)
     if comparison == "yoy":
         delta = (cy_total - py_total) / py_total * 100
-        return f"${cy_total:.1f}M  ▲ {delta:.1f}% vs prior year"
+        return f"${cy_total:.1f}M  ▲ {delta:.1f}% vs prior year", "green"
     if comparison == "target":
-        target = py_total * 1.10  # 10% growth target
+        target = py_total * 1.10
         pct = cy_total / target * 100
-        return f"${cy_total:.1f}M  •  {pct:.0f}% of target"
-    return f"${cy_total:.1f}M  absolute"
+        return f"${cy_total:.1f}M  •  {pct:.0f}% of target", "blue"
+    return f"${cy_total:.1f}M  absolute", "gray"
 
 
 def render(context: dict):
-    rows = [
-        html.Tr([html.Td(m), html.Td(f"${cy}M"), html.Td(f"${py}M")])
-        for m, cy, py in _DATA
-    ]
+    text, color = _headline("yoy")
     body = html.Div(
         [
-            html.P(
-                _headline("yoy"),
-                id=_HEADLINE_ID,
-                style={"color": "#198754", "fontWeight": "bold"},
-            ),
-            html.Table(
+            dmc.Badge(text, color=color, size="lg", mb="sm", id=_HEADLINE_ID),
+            dmc.Table(
                 [
-                    html.Thead(
-                        html.Tr(
-                            [
-                                html.Th("Month"),
-                                html.Th("Current Year"),
-                                html.Th("Prior Year"),
-                            ]
-                        )
+                    dmc.TableThead(
+                        dmc.TableTr([
+                            dmc.TableTh("Month"),
+                            dmc.TableTh("Current Year"),
+                            dmc.TableTh("Prior Year"),
+                        ])
                     ),
-                    html.Tbody(rows),
+                    dmc.TableTbody([
+                        dmc.TableTr([
+                            dmc.TableTd(m),
+                            dmc.TableTd(f"${cy}M"),
+                            dmc.TableTd(f"${py}M"),
+                        ])
+                        for m, cy, py in _DATA
+                    ]),
                 ],
-                style={"width": "100%", "fontSize": "0.9em"},
+                striped=True,
+                highlightOnHover=True,
+                withTableBorder=True,
+                fz="sm",
             ),
         ]
     )
     settings = html.Div(
         [
-            html.Label("Comparison", style={"fontWeight": "600"}),
-            dcc.Dropdown(
+            dmc.Text("Comparison", fw=600, mb=4),
+            dmc.Select(
                 id=_COMPARISON_ID,
-                options=[
+                data=[
                     {"label": "vs prior year", "value": "yoy"},
                     {"label": "vs target (10% growth)", "value": "target"},
                     {"label": "Absolute", "value": "abs"},
                 ],
                 value="yoy",
-                clearable=False,
-                style={"marginTop": "4px"},
+                allowDeselect=False,
             ),
-            html.P(
-                "Choose the headline comparison. The card body refreshes "
-                "automatically when this changes.",
-                className="text-muted small mt-3",
+            dmc.Text(
+                "Choose the headline comparison. The badge refreshes automatically.",
+                c="dimmed",
+                fz="xs",
+                mt="sm",
             ),
         ]
     )
@@ -102,11 +102,13 @@ def render(context: dict):
 
 @callback(
     Output(_HEADLINE_ID, "children"),
+    Output(_HEADLINE_ID, "color"),
     Input(_COMPARISON_ID, "value"),
     prevent_initial_call=True,
 )
-def _update_headline(comparison: str) -> str:
-    return _headline(comparison or "yoy")
+def _update_headline(comparison: str):
+    text, color = _headline(comparison or "yoy")
+    return text, color
 
 
 class _Card:
