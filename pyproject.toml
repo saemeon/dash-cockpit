@@ -33,12 +33,15 @@ Repository = "https://github.com/saemeon/dash-cockpit"
 [dependency-groups]
 test = ["pytest", "pytest-cov"]
 doc = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mike"]
+# demo cards use dbc to show that team cards can bring their own UI library
+demo = ["dash-bootstrap-components>=2.0", "pandas>=1.5"]
 dev = [
     "ruff",
     "prek",
     "ty",
     { include-group = "test" },
     { include-group = "doc" },
+    { include-group = "demo" },
 ]
 
 [build-system]
