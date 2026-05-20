@@ -28,8 +28,6 @@ This document is an honest picture of where the cockpit stands, what's still rou
 
 ## Future direction — milestones in priority order
 
-> M1, M1.5, M2, M3 — shipped. See "Where we are today" above and `CLAUDE.md` "Implementation status" for the per-phase detail.
-
 ### M4 — `dash-fn-form` for parameter rendering
 
 The configurator currently builds its own form with `dbc.Input` / `dcc.Dropdown`. The workspace already has `dash-fn-form` which does this from type hints. Switching saves code and gives consistent polish (validation, error display, conditional fields).
@@ -48,10 +46,6 @@ Today the cockpit is an in-process Dash app. For real corporate deployment we ne
 - **Health endpoint**: `/healthz` that exercises the registry but not card data fetches.
 
 These are not deep design issues — they're "set up the boring infrastructure" tasks. Bundle into one phase when the cockpit is deployed in anger.
-
-### M5.5 — Port to `dash-mantine-components` — ✅ shipped
-
-See "Where we are today" above. `dash-bootstrap-components` removed from dependencies. Free wins shipped: collapsible sidebar, theme switch (`"light"/"dark"/"auto"`), global settings modal (gear ⚙ — Appearance / Edit layout / Card settings panel), Drawer-vs-Aside routing for per-card settings. All preferences persisted to `localStorage`. Mantine notifications (`dmc.NotificationContainer`) deferred — no current trigger.
 
 ### M7 — Drag-from-palette card library (cardcanvas-style)
 
@@ -211,7 +205,7 @@ Pin-down status:
 
 The load-bearing decisions are resolved or consciously deferred. Next session can either:
 
-- Pick up smaller carry-overs: preset delete UI, layout snapshotting in presets, collapsible sidebar (one `AppShell.navbar` prop) — all ~1 hour each.
+- Pick up smaller carry-overs: preset delete UI, layout snapshotting in presets — ~1 hour each.
 - Tackle the still-open pin-downs: #8 first (small, additive), #6 second (real engineering — render timeouts + payload-size warnings + circuit breaker).
 - Or move into M4 / M5 / M6 territory once a real deployment provides concrete pressure.
 
