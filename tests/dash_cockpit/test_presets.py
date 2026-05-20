@@ -2,7 +2,7 @@
 
 import dash
 import pytest
-from dash import dcc, html
+from dash import html
 
 from dash_cockpit._presets import (
     PRESET_SAVE_MODAL_ID,

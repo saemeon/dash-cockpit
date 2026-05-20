@@ -379,8 +379,8 @@ def test_settings_router_callback_is_registered(make_card):
     """One settings-router callback must exist so Settings ⋮ clicks resolve."""
     from dash_cockpit._app import (
         APPSHELL_ID,
-        SETTINGS_DRAWER_ID,
         SETTINGS_ASIDE_BODY_ID,
+        SETTINGS_DRAWER_ID,
     )
 
     app = _make_app(make_card)

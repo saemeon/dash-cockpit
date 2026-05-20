@@ -11,7 +11,6 @@ from dash_cockpit._chrome import (
     card_chrome,
 )
 
-
 # --- _normalise_actions ------------------------------------------------------
 
 
